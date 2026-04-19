@@ -141,7 +141,7 @@ async function main(): Promise<void> {
       ORDER BY score
       LIMIT 10
     `);
-    return stmt.all(query) as Row[];
+    return stmt.all(query) as unknown as Row[];
   }
 
   function vectorSearch(queryVectorJson: string): Row[] {
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
       JOIN docs AS d ON d.rowid = v.id
       ORDER BY v.distance ASC
     `);
-    return stmt.all(queryVectorJson) as Row[];
+    return stmt.all(queryVectorJson) as unknown as Row[];
   }
 
   function hybridSearch(textQuery: string, queryVectorJson: string): Row[] {
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
       LIMIT 10
     `);
 
-    return stmt.all(textQuery, queryVectorJson) as Row[];
+    return stmt.all(textQuery, queryVectorJson) as unknown as Row[];
   }
 
   resetData();

@@ -1,0 +1,48 @@
+{
+  "name": "@statewalker/db-turso-browser",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Turso / libSQL WASM driver for @statewalker/db-api, targeting browser environments.",
+  "homepage": "https://github.com/statewalker/statewalker-db",
+  "author": {
+    "name": "Mikhail Kotelnikov",
+    "email": "mikhail.kotelnikov@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/statewalker/statewalker-db.git"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist",
+    "lint": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@libsql/libsql-wasm-experimental": "^0.0.2",
+    "@statewalker/db-api": "workspace:*"
+  },
+  "devDependencies": {
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

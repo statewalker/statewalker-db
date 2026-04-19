@@ -1,0 +1,48 @@
+{
+  "name": "@statewalker/db-duckdb-node",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "DuckDB Node.js driver for @statewalker/db-api using @duckdb/node-api.",
+  "homepage": "https://github.com/statewalker/statewalker-db",
+  "author": {
+    "name": "Mikhail Kotelnikov",
+    "email": "mikhail.kotelnikov@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/statewalker/statewalker-db.git"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist",
+    "lint": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.0-r.1",
+    "@statewalker/db-api": "workspace:*"
+  },
+  "devDependencies": {
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

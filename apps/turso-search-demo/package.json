@@ -1,0 +1,21 @@
+{
+  "name": "@statewalker/turso-search-demo",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Reference app demonstrating @statewalker/db-turso-browser as a browser-side search store.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tursodatabase/database": "latest"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite": "^6.0.0"
+  }
+}

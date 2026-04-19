@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@changesets/cli": "^2.30.0",
+    "@changesets/cli": "^2.31.0",
     "@types/node": "catalog:",
     "tsx": "catalog:",
     "turbo": "^2.9.6",

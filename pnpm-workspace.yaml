@@ -1,18 +1,20 @@
 packages:
-  - "packages/*"
-  - "apps/*"
+  - packages/*
+  - apps/*
 
 catalog:
-  "@biomejs/biome": "^2.3.5"
-  "@types/node": "^22.19.11"
-  "@types/pg": "^8.15.4"
-  "@vitest/coverage-v8": "^3.2.4"
-  "drizzle-kit": "^0.31.4"
-  "drizzle-orm": "^0.44.2"
-  pg: "^8.16.2"
-  rimraf: "^6.0.1"
-  tsdown: "^0.12.3"
-  tsx: "^4.21.0"
-  turbo: "^2.9.6"
-  typescript: "^5.8.3"
-  vitest: "^3.2.4"
+  '@biomejs/biome': ^2.4.12
+  '@duckdb/duckdb-wasm': ^1.33.1-dev45.0
+  '@duckdb/node-api': ^1.5.2-r.1
+  '@libsql/client': ^0.17.2
+  '@libsql/libsql-wasm-experimental': ^0.0.3
+  '@types/node': ^25.6.0
+  '@vitest/coverage-v8': ^4.1.4
+  apache-arrow: ^21.1.0
+  rimraf: ^6.1.3
+  tsdown: ^0.21.9
+  tsx: ^4.21.0
+  turbo: ^2.9.6
+  typescript: ^6.0.3
+  vite: ^8.0.9
+  vitest: ^4.1.4

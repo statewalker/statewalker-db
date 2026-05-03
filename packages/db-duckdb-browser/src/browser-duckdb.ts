@@ -1,6 +1,7 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
 import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
-import type { Table } from "apache-arrow";
+
+type Table = Awaited<ReturnType<duckdb.AsyncPreparedStatement["query"]>>;
 
 /**
  * Convert an Arrow Table (returned by duckdb-wasm queries) to plain JS objects.

@@ -4,7 +4,7 @@ packages:
 
 catalog:
   '@biomejs/biome': ^2.4.12
-  '@duckdb/duckdb-wasm': ^1.33.1-dev45.0
+  '@duckdb/duckdb-wasm': 1.29.1-dev269.0
   '@duckdb/node-api': ^1.5.2-r.1
   '@libsql/client': ^0.17.2
   '@libsql/libsql-wasm-experimental': ^0.0.3

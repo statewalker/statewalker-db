@@ -17,31 +17,57 @@ function arrowToObjects<T>(table: Table): T[] {
   });
 }
 
+/** Browser-specific options for {@link newBrowserDuckDb}. */
+export interface BrowserDuckDbOptions extends DbOptions {
+  /**
+   * Self-hosted DuckDB bundle URLs (served same-origin, e.g. via a bundler's
+   * `?url` import). Passing these makes the factory spawn a **same-origin**
+   * worker, which OPFS database persistence requires — a cross-origin worker
+   * (the jsDelivr fallback, loaded via a Blob `importScripts` shim) crashes on
+   * OPFS file I/O. Omit to load from jsDelivr (in-memory use only).
+   */
+  bundles?: duckdb.DuckDBBundles;
+}
+
 /**
  * Create a DuckDB-backed {@link Db} using WebAssembly in the browser.
  *
- * When OPFS is available the database persists across sessions.
- * Falls back to in-memory when OPFS is not supported.
+ * With `options.path` set to an `opfs://` URL **and** self-hosted
+ * `options.bundles`, the database persists across reloads on OPFS. Otherwise it
+ * runs in-memory.
  *
- * @param options.path  OPFS path for persistent storage. Omit for in-memory.
+ * @param options.path     `opfs://` path for persistent storage. Omit for in-memory.
+ * @param options.bundles  Same-origin bundle URLs (required for OPFS).
  */
-export async function newBrowserDuckDb(options?: DbOptions): Promise<Db> {
-  const BUNDLES = duckdb.getJsDelivrBundles();
-  const bundle = await duckdb.selectBundle(BUNDLES);
+export async function newBrowserDuckDb(options?: BrowserDuckDbOptions): Promise<Db> {
+  const selfHosted = options?.bundles;
+  const bundle = await duckdb.selectBundle(selfHosted ?? duckdb.getJsDelivrBundles());
 
-  const workerUrl = URL.createObjectURL(
-    new Blob([`importScripts("${bundle.mainWorker ?? ""}");`], {
-      type: "text/javascript",
-    }),
-  );
-  const worker = new Worker(workerUrl);
+  // OPFS file I/O needs a same-origin worker. Self-hosted bundles give a
+  // same-origin URL we load directly; the jsDelivr fallback is cross-origin and
+  // must be wrapped in a Blob that `importScripts` it.
+  let worker: Worker;
+  let blobUrl: string | undefined;
+  if (selfHosted) {
+    worker = new Worker(bundle.mainWorker as string);
+  } else {
+    blobUrl = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker ?? ""}");`], {
+        type: "text/javascript",
+      }),
+    );
+    worker = new Worker(blobUrl);
+  }
+
   const logger = new duckdb.ConsoleLogger();
   const db = new duckdb.AsyncDuckDB(logger, worker);
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-  URL.revokeObjectURL(workerUrl);
+  if (blobUrl) URL.revokeObjectURL(blobUrl);
 
-  // Enable OPFS persistence when a path is provided and the API is available
-  if (options?.path && typeof navigator !== "undefined" && navigator.storage) {
+  // Enable OPFS persistence when a path is provided and the API is available.
+  const persistent =
+    Boolean(options?.path) && typeof navigator !== "undefined" && Boolean(navigator.storage);
+  if (options?.path && persistent) {
     try {
       await db.open({
         path: options.path,
@@ -67,6 +93,12 @@ export async function newBrowserDuckDb(options?: DbOptions): Promise<Db> {
 
     async exec(sql: string): Promise<void> {
       await conn.query(sql);
+    },
+
+    async flush(): Promise<void> {
+      // CHECKPOINT writes the WAL into the OPFS database file so committed
+      // changes survive a reload. Crucial for OPFS persistence.
+      if (persistent) await conn.query("CHECKPOINT");
     },
 
     async close(): Promise<void> {

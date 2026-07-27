@@ -1,9 +1,9 @@
 {
-  "name": "@statewalker/db-turso-browser",
+  "name": "@statewalker/db-sqlite-browser",
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "description": "Turso / libSQL WASM driver for @statewalker/db-api, targeting browser environments.",
+  "description": "libSQL/SQLite WASM driver for @statewalker/db-api, targeting browser environments.",
   "homepage": "https://github.com/statewalker/statewalker-db",
   "author": {
     "name": "Mikhail Kotelnikov",

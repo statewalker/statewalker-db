@@ -27,7 +27,7 @@ function getSqlite3(wasmUrl: string): Promise<Sqlite3Static> {
  * @param options.path  File path for persistent storage. Omit for in-memory.
  * @param options.wasmUrl  URL to the sqlite3.wasm file. Defaults to "/sqlite3.wasm".
  */
-export async function newBrowserTursoDb(options?: BrowserDbOptions): Promise<Db> {
+export async function newBrowserSqliteDb(options?: BrowserDbOptions): Promise<Db> {
   const wasmUrl = options?.wasmUrl ?? "/sqlite3.wasm";
   const sqlite3 = await getSqlite3(wasmUrl);
   const dbPath = options?.path ?? ":memory:";

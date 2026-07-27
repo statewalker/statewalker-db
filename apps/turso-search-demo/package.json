@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Reference app demonstrating @statewalker/db-turso-browser as a browser-side search store.",
+  "description": "Reference app demonstrating @statewalker/db-sqlite-browser as a browser-side search store.",
   "license": "MIT",
   "scripts": {
     "dev": "vite",

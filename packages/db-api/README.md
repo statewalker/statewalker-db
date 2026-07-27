@@ -26,4 +26,4 @@ async function listUsers(db: DbClient) {
 ## Related
 
 - `@statewalker/db-duckdb-browser` / `@statewalker/db-duckdb-node` — DuckDB drivers.
-- `@statewalker/db-turso-browser` / `@statewalker/db-turso-node` — Turso / libSQL drivers.
+- `@statewalker/db-sqlite-browser` / `@statewalker/db-sqlite-node` — libSQL/SQLite drivers.

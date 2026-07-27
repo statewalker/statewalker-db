@@ -1,10 +1,18 @@
-import { existsSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Db } from "@statewalker/db-api";
+import { runDbConformance } from "@statewalker/db-tests";
 import { afterEach, describe, expect, it } from "vitest";
 import { newNodeDuckDb } from "./node-duckdb.js";
 
+// Common contract (CRUD, parameter binding, cardinality, close, file
+// persistence, error paths) is covered by the shared conformance suite.
+// duckdb dialect: `$1` placeholder; rows are already plain, so the spread
+// normalizer is an identity-style copy.
+runDbConformance(newNodeDuckDb, {
+  placeholder: "$1",
+  normalizeRow: (row) => ({ ...row }),
+});
+
+// Dialect-specific behavior kept per-adapter: DuckDB FTS extension + VSS/HNSW.
 describe("newNodeDuckDb", () => {
   let db: Db;
 
@@ -12,77 +20,6 @@ describe("newNodeDuckDb", () => {
     if (db) {
       await db.close();
     }
-  });
-
-  describe("basic CRUD", () => {
-    it("creates a table, inserts rows, and queries them", async () => {
-      db = await newNodeDuckDb();
-      await db.exec("CREATE TABLE users (id INTEGER, name VARCHAR, age INTEGER)");
-      await db.exec("INSERT INTO users VALUES (1, 'Alice', 30), (2, 'Bob', 25)");
-
-      const rows = await db.query<{ id: number; name: string; age: number }>(
-        "SELECT * FROM users ORDER BY id",
-      );
-
-      expect(rows).toHaveLength(2);
-      expect(rows[0]).toEqual({ id: 1, name: "Alice", age: 30 });
-      expect(rows[1]).toEqual({ id: 2, name: "Bob", age: 25 });
-    });
-
-    it("supports parameterized queries", async () => {
-      db = await newNodeDuckDb();
-      await db.exec("CREATE TABLE items (id INTEGER, label VARCHAR)");
-      await db.exec("INSERT INTO items VALUES (1, 'one'), (2, 'two'), (3, 'three')");
-
-      const rows = await db.query<{ id: number; label: string }>(
-        "SELECT * FROM items WHERE id = $1",
-        [2],
-      );
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toEqual({ id: 2, label: "two" });
-    });
-  });
-
-  describe("close", () => {
-    it("closes without error", async () => {
-      db = await newNodeDuckDb();
-      await db.exec("SELECT 1");
-      await expect(db.close()).resolves.toBeUndefined();
-    });
-  });
-
-  describe("file persistence", () => {
-    const dbPath = join(tmpdir(), `test-duckdb-${Date.now()}.db`);
-
-    afterEach(() => {
-      try {
-        unlinkSync(dbPath);
-      } catch {
-        // ignore
-      }
-      try {
-        unlinkSync(`${dbPath}.wal`);
-      } catch {
-        // ignore
-      }
-    });
-
-    it("persists data across open/close cycles", async () => {
-      const db1 = await newNodeDuckDb({ path: dbPath });
-      await db1.exec("CREATE TABLE persist_test (val INTEGER)");
-      await db1.exec("INSERT INTO persist_test VALUES (42)");
-      await db1.close();
-
-      expect(existsSync(dbPath)).toBe(true);
-
-      const db2 = await newNodeDuckDb({ path: dbPath });
-      const rows = await db2.query<{ val: number }>("SELECT val FROM persist_test");
-      await db2.close();
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.val).toBe(42);
-    });
   });
 
   describe("FTS extension", () => {

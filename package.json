@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.16.1",
-  "description": "Database adapters: DuckDB and Turso for browser and Node.",
+  "description": "Database adapters: DuckDB and SQLite (libSQL) for browser and Node.",
   "homepage": "https://github.com/statewalker/statewalker-db",
   "author": {
     "name": "Mikhail Kotelnikov",

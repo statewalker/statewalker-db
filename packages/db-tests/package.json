@@ -1,9 +1,9 @@
 {
-  "name": "@statewalker/db-duckdb-node",
+  "name": "@statewalker/db-tests",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "type": "module",
-  "description": "DuckDB Node.js driver for @statewalker/db-api using @duckdb/node-api.",
+  "description": "Shared conformance test suite for @statewalker/db-api implementations. Node-only; consumed by the db-* node adapters.",
   "homepage": "https://github.com/statewalker/statewalker-db",
   "author": {
     "name": "Mikhail Kotelnikov",
@@ -24,27 +24,24 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist",
     "lint": "biome check --write .",
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@duckdb/node-api": "catalog:",
     "@statewalker/db-api": "workspace:*"
   },
+  "peerDependencies": {
+    "vitest": "catalog:"
+  },
   "devDependencies": {
-    "@statewalker/db-tests": "workspace:*",
     "@types/node": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
-  "sideEffects": false,
-  "publishConfig": {
-    "access": "public"
-  }
+  "sideEffects": false
 }

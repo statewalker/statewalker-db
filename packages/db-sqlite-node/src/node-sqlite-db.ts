@@ -3,11 +3,11 @@ import { createClient } from "@libsql/client";
 import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
 
 /**
- * Create a libSQL-backed {@link Db} using Turso's native Node.js client.
+ * Create a libSQL-backed {@link Db} using the native Node.js client.
  *
  * @param options.path  File path for persistent storage. Omit for in-memory.
  */
-export async function newNodeTursoDb(options?: DbOptions): Promise<Db> {
+export async function newNodeSqliteDb(options?: DbOptions): Promise<Db> {
   const url = options?.path ? `file:${options.path}` : ":memory:";
   const client = createClient({ url });
 

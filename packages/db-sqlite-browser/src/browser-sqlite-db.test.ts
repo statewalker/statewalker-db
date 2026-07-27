@@ -1,11 +1,15 @@
-import { existsSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Db } from "@statewalker/db-api";
 import { afterEach, describe, expect, it } from "vitest";
-import { newNodeTursoDb } from "./node-turso-db.js";
+import { newBrowserSqliteDb } from "./browser-sqlite-db.js";
 
-describe("newNodeTursoDb", () => {
+/**
+ * Browser-based SQLite tests are skipped in Node.js environments.
+ * They require a real browser with WASM support.
+ *
+ * To run these tests in a browser, use vitest with `@vitest/browser` and Playwright:
+ *   vitest --browser.name=chromium
+ */
+describe.skip("newBrowserSqliteDb (requires browser environment)", () => {
   let db: Db;
 
   afterEach(async () => {
@@ -16,7 +20,7 @@ describe("newNodeTursoDb", () => {
 
   describe("basic CRUD", () => {
     it("creates a table, inserts rows, and queries them", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
       await db.exec("CREATE TABLE users (id INTEGER, name TEXT, age INTEGER)");
       await db.exec("INSERT INTO users VALUES (1, 'Alice', 30), (2, 'Bob', 25)");
 
@@ -30,7 +34,7 @@ describe("newNodeTursoDb", () => {
     });
 
     it("supports parameterized queries", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
       await db.exec("CREATE TABLE items (id INTEGER, label TEXT)");
       await db.exec("INSERT INTO items VALUES (1, 'one'), (2, 'two'), (3, 'three')");
 
@@ -46,45 +50,15 @@ describe("newNodeTursoDb", () => {
 
   describe("close", () => {
     it("closes without error", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
       await db.exec("SELECT 1");
       await expect(db.close()).resolves.toBeUndefined();
     });
   });
 
-  describe("file persistence", () => {
-    const dbPath = join(tmpdir(), `test-turso-${Date.now()}.db`);
-
-    afterEach(() => {
-      for (const suffix of ["", "-wal", "-shm"]) {
-        try {
-          unlinkSync(`${dbPath}${suffix}`);
-        } catch {
-          // ignore
-        }
-      }
-    });
-
-    it("persists data across open/close cycles", async () => {
-      const db1 = await newNodeTursoDb({ path: dbPath });
-      await db1.exec("CREATE TABLE persist_test (val INTEGER)");
-      await db1.exec("INSERT INTO persist_test VALUES (42)");
-      await db1.close();
-
-      expect(existsSync(dbPath)).toBe(true);
-
-      const db2 = await newNodeTursoDb({ path: dbPath });
-      const rows = await db2.query<{ val: number }>("SELECT val FROM persist_test");
-      await db2.close();
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.val).toBe(42);
-    });
-  });
-
   describe("FTS5", () => {
     it("returns empty results for unmatched search terms", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE docs2_fts USING fts5(content)");
       await db.exec(
         "INSERT INTO docs2_fts (rowid, content) VALUES (1, 'hello world'), (2, 'goodbye world')",
@@ -97,7 +71,7 @@ describe("newNodeTursoDb", () => {
     });
 
     it("searches across multiple text columns", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE articles_fts USING fts5(title, body, tokenize='porter')");
       await db.exec(`
         INSERT INTO articles_fts (rowid, title, body) VALUES
@@ -119,7 +93,7 @@ describe("newNodeTursoDb", () => {
     });
 
     it("creates an FTS5 index and performs full-text search", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE docs_fts USING fts5(content)");
       await db.exec(`
         INSERT INTO docs_fts (rowid, content) VALUES
@@ -144,7 +118,7 @@ describe("newNodeTursoDb", () => {
 
   describe("vector search", () => {
     it("creates index and performs vector similarity search", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
 
       await db.exec("CREATE TABLE embeddings (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
       await db.exec("CREATE INDEX vec_idx ON embeddings (libsql_vector_idx(vec))");
@@ -164,7 +138,7 @@ describe("newNodeTursoDb", () => {
     });
 
     it("returns k nearest neighbors ordered by distance", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
 
       await db.exec("CREATE TABLE vectors (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
       await db.exec("CREATE INDEX vec_idx2 ON vectors (libsql_vector_idx(vec))");
@@ -187,7 +161,7 @@ describe("newNodeTursoDb", () => {
     });
 
     it("works without index (brute-force scan)", async () => {
-      db = await newNodeTursoDb();
+      db = await newBrowserSqliteDb();
 
       await db.exec("CREATE TABLE vecs_no_idx (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
       await db.exec(`
@@ -203,5 +177,12 @@ describe("newNodeTursoDb", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]?.id).toBe(2);
     });
+  });
+});
+
+describe("browser-sqlite-db module", () => {
+  it("exports newBrowserSqliteDb function", async () => {
+    const mod = await import("./browser-sqlite-db.js");
+    expect(typeof mod.newBrowserSqliteDb).toBe("function");
   });
 });

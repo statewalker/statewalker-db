@@ -1,15 +1,19 @@
 import type { Db } from "@statewalker/db-api";
+import { runDbConformance } from "@statewalker/db-tests";
 import { afterEach, describe, expect, it } from "vitest";
-import { newBrowserTursoDb } from "./browser-turso-db.js";
+import { newNodeSqliteDb } from "./node-sqlite-db.js";
 
-/**
- * Browser-based Turso tests are skipped in Node.js environments.
- * They require a real browser with WASM support.
- *
- * To run these tests in a browser, use vitest with `@vitest/browser` and Playwright:
- *   vitest --browser.name=chromium
- */
-describe.skip("newBrowserTursoDb (requires browser environment)", () => {
+// Common contract (CRUD, parameter binding, cardinality, close, file
+// persistence, error paths) is covered by the shared conformance suite.
+// libsql dialect: `?` placeholder; the spread normalizer drops libsql Row's
+// non-enumerable positional keys + length.
+runDbConformance(newNodeSqliteDb, {
+  placeholder: "?",
+  normalizeRow: (row) => ({ ...row }),
+});
+
+// Dialect-specific behavior kept per-adapter: libsql FTS5 + native vector index.
+describe("newNodeSqliteDb", () => {
   let db: Db;
 
   afterEach(async () => {
@@ -18,47 +22,9 @@ describe.skip("newBrowserTursoDb (requires browser environment)", () => {
     }
   });
 
-  describe("basic CRUD", () => {
-    it("creates a table, inserts rows, and queries them", async () => {
-      db = await newBrowserTursoDb();
-      await db.exec("CREATE TABLE users (id INTEGER, name TEXT, age INTEGER)");
-      await db.exec("INSERT INTO users VALUES (1, 'Alice', 30), (2, 'Bob', 25)");
-
-      const rows = await db.query<{ id: number; name: string; age: number }>(
-        "SELECT * FROM users ORDER BY id",
-      );
-
-      expect(rows).toHaveLength(2);
-      expect(rows[0]).toMatchObject({ id: 1, name: "Alice", age: 30 });
-      expect(rows[1]).toMatchObject({ id: 2, name: "Bob", age: 25 });
-    });
-
-    it("supports parameterized queries", async () => {
-      db = await newBrowserTursoDb();
-      await db.exec("CREATE TABLE items (id INTEGER, label TEXT)");
-      await db.exec("INSERT INTO items VALUES (1, 'one'), (2, 'two'), (3, 'three')");
-
-      const rows = await db.query<{ id: number; label: string }>(
-        "SELECT * FROM items WHERE id = ?",
-        [2],
-      );
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ id: 2, label: "two" });
-    });
-  });
-
-  describe("close", () => {
-    it("closes without error", async () => {
-      db = await newBrowserTursoDb();
-      await db.exec("SELECT 1");
-      await expect(db.close()).resolves.toBeUndefined();
-    });
-  });
-
   describe("FTS5", () => {
     it("returns empty results for unmatched search terms", async () => {
-      db = await newBrowserTursoDb();
+      db = await newNodeSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE docs2_fts USING fts5(content)");
       await db.exec(
         "INSERT INTO docs2_fts (rowid, content) VALUES (1, 'hello world'), (2, 'goodbye world')",
@@ -71,7 +37,7 @@ describe.skip("newBrowserTursoDb (requires browser environment)", () => {
     });
 
     it("searches across multiple text columns", async () => {
-      db = await newBrowserTursoDb();
+      db = await newNodeSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE articles_fts USING fts5(title, body, tokenize='porter')");
       await db.exec(`
         INSERT INTO articles_fts (rowid, title, body) VALUES
@@ -93,7 +59,7 @@ describe.skip("newBrowserTursoDb (requires browser environment)", () => {
     });
 
     it("creates an FTS5 index and performs full-text search", async () => {
-      db = await newBrowserTursoDb();
+      db = await newNodeSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE docs_fts USING fts5(content)");
       await db.exec(`
         INSERT INTO docs_fts (rowid, content) VALUES
@@ -118,7 +84,7 @@ describe.skip("newBrowserTursoDb (requires browser environment)", () => {
 
   describe("vector search", () => {
     it("creates index and performs vector similarity search", async () => {
-      db = await newBrowserTursoDb();
+      db = await newNodeSqliteDb();
 
       await db.exec("CREATE TABLE embeddings (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
       await db.exec("CREATE INDEX vec_idx ON embeddings (libsql_vector_idx(vec))");
@@ -138,7 +104,7 @@ describe.skip("newBrowserTursoDb (requires browser environment)", () => {
     });
 
     it("returns k nearest neighbors ordered by distance", async () => {
-      db = await newBrowserTursoDb();
+      db = await newNodeSqliteDb();
 
       await db.exec("CREATE TABLE vectors (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
       await db.exec("CREATE INDEX vec_idx2 ON vectors (libsql_vector_idx(vec))");
@@ -161,7 +127,7 @@ describe.skip("newBrowserTursoDb (requires browser environment)", () => {
     });
 
     it("works without index (brute-force scan)", async () => {
-      db = await newBrowserTursoDb();
+      db = await newNodeSqliteDb();
 
       await db.exec("CREATE TABLE vecs_no_idx (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
       await db.exec(`
@@ -177,12 +143,5 @@ describe.skip("newBrowserTursoDb (requires browser environment)", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]?.id).toBe(2);
     });
-  });
-});
-
-describe("browser-turso-db module", () => {
-  it("exports newBrowserTursoDb function", async () => {
-    const mod = await import("./browser-turso-db.js");
-    expect(typeof mod.newBrowserTursoDb).toBe("function");
   });
 });

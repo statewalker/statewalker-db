@@ -17,6 +17,7 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:browser": "pnpm --filter @statewalker/db-sqlite-browser --filter @statewalker/db-duckdb-browser test:browser",
     "typecheck": "turbo run typecheck",
     "lint": "biome check --write .",
     "lint:check": "biome check .",

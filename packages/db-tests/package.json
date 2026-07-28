@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shared conformance test suite for @statewalker/db-api implementations. Node-only; consumed by the db-* node adapters.",
+  "description": "Shared conformance test suite for @statewalker/db-api implementations. Consumed by the db-* node adapters and, via Vitest browser mode, the browser adapters (pass skipFilePersistence to drop the node-only scenario).",
   "homepage": "https://github.com/statewalker/statewalker-db",
   "author": {
     "name": "Mikhail Kotelnikov",

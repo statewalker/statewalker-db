@@ -26,6 +26,7 @@
     "dev": "tsdown --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist",
     "lint": "biome check --write .",
@@ -36,6 +37,11 @@
     "@statewalker/db-api": "workspace:*"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@statewalker/db-tests": "workspace:*",
+    "@vitest/browser": "catalog:",
+    "@vitest/browser-playwright": "catalog:",
+    "playwright": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

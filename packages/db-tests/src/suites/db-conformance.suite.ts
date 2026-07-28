@@ -2,10 +2,12 @@
  * Shared conformance suite for the {@link Db} contract.
  *
  * One behavioral spec, run against any `Db` implementation through its public
- * surface (`query`, `exec`, optional `flush`, `close`). Node-only: the file
- * persistence scenario writes to a real temp directory, so this suite is wired
- * from the node adapters (`db-sqlite-node`, `db-duckdb-node`) — never the
- * browser adapters.
+ * surface (`query`, `exec`, optional `flush`, `close`). Runs in both Node and a
+ * real browser (Vitest browser mode) — the only node-only scenario is the file
+ * persistence one, which writes to a real temp directory via `node:fs`. Browser
+ * adapters pass `{ skipFilePersistence: true }` to drop it; the node imports it
+ * needs are loaded through a `/* @vite-ignore *\/` dynamic import *inside* the
+ * scenario, so a browser bundle never has to resolve `node:fs` at all.
  *
  * The two axes that differ between dialects are parameters, not forks in the
  * suite:
@@ -16,9 +18,6 @@
  *    pass `(row) => ({ ...row })`; the copy keeps only the named columns.
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
 import { describe, expect, it } from "vitest";
 
@@ -34,6 +33,12 @@ export interface RunDbConformanceOptions {
    * `toEqual` works. Defaults to identity.
    */
   normalizeRow?: (row: DbEntry) => DbEntry;
+  /**
+   * Skip the node-only file-persistence scenario, which uses `node:fs` temp
+   * files. Browser adapters (Vitest browser mode) set this `true`; node
+   * adapters leave it unset. Defaults to `false` (node behavior unchanged).
+   */
+  skipFilePersistence?: boolean;
 }
 
 /**
@@ -185,26 +190,46 @@ export function runDbConformance(makeDb: MakeDb, options: RunDbConformanceOption
     });
 
     // Requirement: file-backed databases persist across reopen (node-only).
-    it("persists file-backed data across close and reopen on the same path", async () => {
-      const dir = await mkdtemp(join(tmpdir(), "db-conformance-"));
-      const path = join(dir, "data.db");
-      try {
-        const db1 = await makeDb({ path });
-        await db1.exec("CREATE TABLE p (val INTEGER)");
-        await db1.exec("INSERT INTO p VALUES (42)");
-        await db1.close();
+    // The node built-ins are loaded through a string-variable dynamic import
+    // typed by a local shim, so neither a browser bundle (Vite cannot statically
+    // analyze a variable specifier) nor a browser typecheck (no `node:*` type
+    // resolution, hence no `@types/node`) ever has to resolve them. Browser
+    // adapters skip the scenario outright via `skipFilePersistence`.
+    interface NodeFsShim {
+      mkdtemp: (prefix: string) => Promise<string>;
+      rm: (path: string, options: { recursive: boolean; force: boolean }) => Promise<void>;
+      tmpdir: () => string;
+      join: (...parts: string[]) => string;
+    }
+    const loadNode = (specifier: string): Promise<NodeFsShim> =>
+      import(/* @vite-ignore */ specifier) as Promise<NodeFsShim>;
+    const filePersistenceIt = options.skipFilePersistence ? it.skip : it;
+    filePersistenceIt(
+      "persists file-backed data across close and reopen on the same path",
+      async () => {
+        const { mkdtemp, rm } = await loadNode("node:fs/promises");
+        const { tmpdir } = await loadNode("node:os");
+        const { join } = await loadNode("node:path");
+        const dir = await mkdtemp(join(tmpdir(), "db-conformance-"));
+        const path = join(dir, "data.db");
+        try {
+          const db1 = await makeDb({ path });
+          await db1.exec("CREATE TABLE p (val INTEGER)");
+          await db1.exec("INSERT INTO p VALUES (42)");
+          await db1.close();
 
-        const db2 = await makeDb({ path });
-        const rows = await db2.query<{ val: number }>("SELECT val FROM p");
-        await db2.close();
+          const db2 = await makeDb({ path });
+          const rows = await db2.query<{ val: number }>("SELECT val FROM p");
+          await db2.close();
 
-        expect(rows).toHaveLength(1);
-        expect(Number(rows[0]?.val)).toBe(42);
-      } finally {
-        // Removes the db file and any -wal/-shm/.wal sidecars in the temp dir.
-        await rm(dir, { recursive: true, force: true });
-      }
-    });
+          expect(rows).toHaveLength(1);
+          expect(Number(rows[0]?.val)).toBe(42);
+        } finally {
+          // Removes the db file and any -wal/-shm/.wal sidecars in the temp dir.
+          await rm(dir, { recursive: true, force: true });
+        }
+      },
+    );
 
     // Requirement: invalid SQL is reported as an error.
     it("rejects syntactically invalid SQL rather than resolving", async () => {

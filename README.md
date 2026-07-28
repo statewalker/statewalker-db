@@ -28,6 +28,28 @@ pnpm run build
 pnpm run test
 ```
 
+`pnpm run test` runs the Node test suites. The two browser adapters
+(`db-sqlite-browser`, `db-duckdb-browser`) additionally run the shared
+conformance suite in a **real headless Chromium** via Vitest browser mode +
+Playwright:
+
+```sh
+pnpm exec playwright install chromium   # one-time: fetch the Chromium binary
+pnpm run test:browser                    # run both browser adapter suites
+```
+
+`pnpm run test:browser` fans out to each browser package's own `test:browser`
+script (`vitest run --config vitest.browser.config.ts`). To run just one:
+
+```sh
+pnpm --filter @statewalker/db-sqlite-browser test:browser
+pnpm --filter @statewalker/db-duckdb-browser test:browser
+```
+
+The DuckDB browser suite fetches its WASM bundle from jsDelivr, so it needs
+outbound network access from the browser; the libSQL suite serves `sqlite3.wasm`
+locally (via the config's `publicDir`) and needs none.
+
 ## Release
 
 Releases are managed via [changesets](https://github.com/changesets/changesets):

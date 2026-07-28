@@ -18,7 +18,7 @@ Database adapters: DuckDB and SQLite (libSQL) for browser and Node.
 
 | App | Description |
 | --- | --- |
-| [turso-search-demo](apps/turso-search-demo) | Vite demo combining FTS5 + vector search on `db-sqlite-browser`. |
+| [sqlite-search-demo](apps/sqlite-search-demo) | Vite demo combining FTS5 + vector search on real SQLite (`@sqlite.org/sqlite-wasm`, in-browser). |
 
 ## Development
 

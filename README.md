@@ -13,12 +13,25 @@ Database adapters: DuckDB and SQLite (libSQL) for browser and Node.
 | [@statewalker/db-duckdb-node](packages/db-duckdb-node) | DuckDB Node.js driver backed by `@duckdb/node-api`. |
 | [@statewalker/db-sqlite-browser](packages/db-sqlite-browser) | libSQL/SQLite WASM driver for browser environments. |
 | [@statewalker/db-sqlite-node](packages/db-sqlite-node) | libSQL/SQLite Node.js driver backed by `@libsql/client`. |
+| [@statewalker/db-tests](packages/db-tests) | Shared conformance suite every `db-api` implementation runs, in Node and (via Vitest browser mode) the browser. |
 
 ## Apps
 
 | App | Description |
 | --- | --- |
 | [sqlite-search-demo](apps/sqlite-search-demo) | Vite demo combining FTS5 + vector search on real SQLite (`@sqlite.org/sqlite-wasm`, in-browser). |
+
+## Cross-repo dependencies
+
+**This repository depends on no other repository.** It is a foundation of the
+StateWalker dependency graph — everything below it may be built without it.
+
+**Depended on by:** [`statewalker-indexer`](https://github.com/statewalker/statewalker-indexer) (`@statewalker/db-api`).
+
+Cross-repo dependencies are declared `workspace:*` rather than `catalog:`. This is
+deliberate: turbo derives its task graph from `workspace:` specifiers and does **not**
+resolve `catalog:`, so a `catalog:` cross-repo dependency is invisible to the scheduler
+and its consumer can be built before it.
 
 ## Development
 

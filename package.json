@@ -15,10 +15,10 @@
     "url": "git+ssh://git@github.com/statewalker/statewalker-db.git"
   },
   "scripts": {
-    "build": "turbo run build",
-    "test": "turbo run test",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
     "test:browser": "pnpm --filter @statewalker/db-sqlite-browser --filter @statewalker/db-duckdb-browser test:browser",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "pnpm -r run typecheck",
     "lint": "biome check --write .",
     "lint:check": "biome check .",
     "format": "biome format --write .",

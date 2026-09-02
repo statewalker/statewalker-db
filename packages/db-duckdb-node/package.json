@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-duckdb-node",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "description": "DuckDB Node.js driver for @statewalker/db-api using @duckdb/node-api.",

@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-tests",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Shared conformance test suite for @statewalker/db-api implementations. Consumed by the db-* node adapters and, via Vitest browser mode, the browser adapters (pass skipFilePersistence to drop the node-only scenario).",

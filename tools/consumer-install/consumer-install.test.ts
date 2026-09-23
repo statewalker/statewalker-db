@@ -13,6 +13,10 @@ export type ConsumerTarget = {
   subpaths: string[];
   /** Subpaths that legitimately cannot import under Node (browser-only). */
   browserOnly?: string[];
+  /** Deliberately types-only: it imports cleanly but exports nothing at runtime
+   *  (tsdown emits `export {}`). The import MUST still run — that is the defect
+   *  class this harness catches — only the non-empty assertion is skipped. */
+  typesOnly?: boolean;
 };
 
 export const PACKAGES: ConsumerTarget[] = [
@@ -20,11 +24,12 @@ export const PACKAGES: ConsumerTarget[] = [
     name: "@statewalker/db-api",
     dir: "db-api",
     subpaths: ["."],
-    // Not a browser restriction: db-api is a deliberate types-only interface package
-    // (see its README — "import type { DbClient }"); src/index.ts contains only
-    // `export type` declarations, so tsdown correctly emits `export {}` at runtime.
-    // There is nothing for a runtime-import probe to verify.
-    browserOnly: ["."],
+    // db-api is a deliberate types-only interface package (see its README —
+    // "import type { DbClient }"); src/index.ts contains only `export type`
+    // declarations, so tsdown correctly emits `export {}` at runtime. It CAN be
+    // imported under Node — that must keep being verified — it just has no
+    // runtime exports to assert non-empty.
+    typesOnly: true,
   },
   { name: "@statewalker/db-duckdb-node", dir: "db-duckdb-node", subpaths: ["."] },
   { name: "@statewalker/db-sqlite-node", dir: "db-sqlite-node", subpaths: ["."] },
@@ -124,12 +129,17 @@ describe.each(PACKAGES)("$name installs and imports as an external consumer", (t
     const importable = target.subpaths.filter((s) => !target.browserOnly?.includes(s));
     for (const subpath of importable) {
       const specifier = subpath === "." ? target.name : `${target.name}/${subpath.replace(/^\.\//, "")}`;
-      const script = `import * as m from ${JSON.stringify(specifier)};
+      // typesOnly still MUST import successfully — that is the defect class this
+      // harness exists to catch — it just does not have to export anything.
+      const script = target.typesOnly
+        ? `import * as m from ${JSON.stringify(specifier)};
+        console.log("OK");`
+        : `import * as m from ${JSON.stringify(specifier)};
         if (Object.keys(m).length === 0) { console.error("EMPTY"); process.exit(2); }
         console.log("OK");`;
       writeFileSync(join(scratch, "probe.mjs"), script);
       const result = execFileSync("node", ["probe.mjs"], { cwd: scratch, encoding: "utf8" });
-      expect(result, `${specifier} must import and export something`).toContain("OK");
+      expect(result, `${specifier} must import${target.typesOnly ? "" : " and export something"}`).toContain("OK");
     }
   });
 
@@ -137,6 +147,24 @@ describe.each(PACKAGES)("$name installs and imports as an external consumer", (t
   it("browserOnly, if declared, names a subpath that exists", () => {
     for (const s of target.browserOnly ?? []) {
       expect(target.subpaths, `browserOnly "${s}" is not in subpaths`).toContain(s);
+    }
+  });
+
+  // (6) typesOnly is self-policing: if the package ever starts shipping runtime
+  // exports, this catches the stale flag instead of letting it silently hide a
+  // regression in the non-empty assertion above.
+  it("typesOnly, if declared, genuinely exports nothing", () => {
+    if (!target.typesOnly) return;
+    const scratch = installFromTarball(target);
+    const importable = target.subpaths.filter((s) => !target.browserOnly?.includes(s));
+    for (const subpath of importable) {
+      const specifier = subpath === "." ? target.name : `${target.name}/${subpath.replace(/^\.\//, "")}`;
+      const script = `import * as m from ${JSON.stringify(specifier)};
+        console.log(JSON.stringify(Object.keys(m)));`;
+      writeFileSync(join(scratch, "probe.mjs"), script);
+      const result = execFileSync("node", ["probe.mjs"], { cwd: scratch, encoding: "utf8" });
+      const keys = JSON.parse(result.trim().split("\n").at(-1) as string);
+      expect(keys, `${specifier} is declared typesOnly but exports: ${keys.join(", ")}`).toEqual([]);
     }
   });
 });

@@ -27,6 +27,7 @@
   ],
   "scripts": {
     "build": "tsdown",
+    "prepack": "pnpm run build",
     "dev": "tsdown --watch",
     "test": "vitest run",
     "test:watch": "vitest",

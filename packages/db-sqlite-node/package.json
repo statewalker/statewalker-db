@@ -15,7 +15,11 @@
     "url": "git+ssh://git@github.com/statewalker/statewalker-db.git"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
   },
   "files": [
     "dist",

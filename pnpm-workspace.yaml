@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - tools/*
 
 catalog:
   '@biomejs/biome': ^2.5.8

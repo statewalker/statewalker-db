@@ -34,7 +34,7 @@
     "@statewalker/db-api": "workspace:*"
   },
   "peerDependencies": {
-    "vitest": "catalog:"
+    "vitest": "catalog:peers"
   },
   "devDependencies": {
     "@types/node": "catalog:",

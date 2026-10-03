@@ -9,7 +9,7 @@ catalog:
   '@biomejs/biome': ^2.5.15
   '@duckdb/duckdb-wasm': ^1.33.1-dev57.0
   '@duckdb/node-api': ^1.5.5-r.4
-  '@libsql/client': ^0.17.4
+  '@libsql/client': ^0.18.0
   '@libsql/libsql-wasm-experimental': ^0.0.3
   '@playwright/test': ^1.63.0
   '@types/node': ^26.6.4

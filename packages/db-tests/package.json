@@ -31,7 +31,7 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@statewalker/db-api": "workspace:*"
+    "@statewalker/db-api": "workspace:^"
   },
   "peerDependencies": {
     "vitest": "catalog:peers"

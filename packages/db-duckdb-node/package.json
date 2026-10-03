@@ -38,10 +38,10 @@
   },
   "dependencies": {
     "@duckdb/node-api": "catalog:",
-    "@statewalker/db-api": "workspace:*"
+    "@statewalker/db-api": "workspace:^"
   },
   "devDependencies": {
-    "@statewalker/db-tests": "workspace:*",
+    "@statewalker/db-tests": "workspace:^",
     "@types/node": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",

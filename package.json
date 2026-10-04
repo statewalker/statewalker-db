@@ -30,10 +30,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@changesets/cli": "^2.31.0",
+    "@changesets/cli": "catalog:",
     "@types/node": "catalog:",
     "tsx": "catalog:",
-    "turbo": "^2.9.6",
+    "turbo": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

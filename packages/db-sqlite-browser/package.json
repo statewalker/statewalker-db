@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite-browser",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "type": "module",
   "description": "libSQL/SQLite WASM driver for @statewalker/db-api, targeting browser environments.",
@@ -39,11 +39,11 @@
   },
   "dependencies": {
     "@libsql/libsql-wasm-experimental": "catalog:",
-    "@statewalker/db-api": "workspace:*"
+    "@statewalker/db-api": "workspace:^"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",
-    "@statewalker/db-tests": "workspace:*",
+    "@statewalker/db-tests": "workspace:^",
     "@vitest/browser": "catalog:",
     "@vitest/browser-playwright": "catalog:",
     "playwright": "catalog:",

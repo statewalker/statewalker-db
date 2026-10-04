@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite-node",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "libSQL/SQLite client driver for @statewalker/db-api, targeting Node.js environments.",
@@ -38,10 +38,10 @@
   },
   "dependencies": {
     "@libsql/client": "catalog:",
-    "@statewalker/db-api": "workspace:*"
+    "@statewalker/db-api": "workspace:^"
   },
   "devDependencies": {
-    "@statewalker/db-tests": "workspace:*",
+    "@statewalker/db-tests": "workspace:^",
     "@types/node": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",

@@ -4,6 +4,15 @@
   "version": "0.0.1",
   "type": "module",
   "description": "Reference app demonstrating real SQLite (official sqlite-wasm) FTS5 + JS-cosine vector search in the browser.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/statewalker/statewalker-db.git",
+    "directory": "apps/sqlite-search-demo"
+  },
+  "bugs": {
+    "url": "https://github.com/statewalker/statewalker-db/issues"
+  },
+  "homepage": "https://github.com/statewalker/statewalker-db/tree/main/apps/sqlite-search-demo#readme",
   "license": "MIT",
   "scripts": {
     "dev": "vite",

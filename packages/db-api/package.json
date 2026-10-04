@@ -4,7 +4,10 @@
   "private": false,
   "type": "module",
   "description": "Minimal database client interface: query, execute, transaction primitives consumed by every @statewalker/db-* driver.",
-  "homepage": "https://github.com/statewalker/statewalker-db",
+  "bugs": {
+    "url": "https://github.com/statewalker/statewalker-db/issues"
+  },
+  "homepage": "https://github.com/statewalker/statewalker-db/tree/main/packages/db-api#readme",
   "author": {
     "name": "Mikhail Kotelnikov",
     "email": "mikhail.kotelnikov@gmail.com"
@@ -12,7 +15,8 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/statewalker/statewalker-db.git"
+    "url": "git+https://github.com/statewalker/statewalker-db.git",
+    "directory": "packages/db-api"
   },
   "exports": {
     ".": {

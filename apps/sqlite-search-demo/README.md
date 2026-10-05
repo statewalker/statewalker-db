@@ -8,14 +8,20 @@ build — with **no Turso / libSQL**. It shows:
 - **Vector search** by cosine similarity over stored float32 blobs
 - **Hybrid search** combining both
 
-## Install
+Private workspace app (`@statewalker/sqlite-search-demo`), not published.
 
-```bash
-npm install
-npm run dev
+## Run
+
+From the repository root:
+
+```sh
+pnpm install
+pnpm --filter @statewalker/sqlite-search-demo dev       # Vite dev server
+pnpm --filter @statewalker/sqlite-search-demo build     # production build to dist/
+pnpm --filter @statewalker/sqlite-search-demo preview   # serve the build
 ```
 
-Then open the Vite URL in your browser.
+Then open the URL that Vite prints.
 
 ## Features
 

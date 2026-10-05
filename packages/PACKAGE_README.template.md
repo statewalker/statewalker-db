@@ -2,11 +2,17 @@
 
 {{packageDescription}}
 
-## Installation
+## Install
 
 ```sh
 pnpm add {{packageName}}
 ```
+
+<!-- Mention required peer dependencies from package.json, if any. -->
+
+## Entry points
+
+<!-- One row per `exports` subpath: import path, what it gives, environment (browser / node / worker). -->
 
 ## Usage
 

@@ -3,7 +3,7 @@
   "version": "0.1.2",
   "private": false,
   "type": "module",
-  "description": "Minimal database client interface: query, execute, transaction primitives consumed by every @statewalker/db-* driver.",
+  "description": "Minimal database interface (query, exec, optional flush, close) implemented by every @statewalker/db-* driver.",
   "bugs": {
     "url": "https://github.com/statewalker/statewalker-db/issues"
   },

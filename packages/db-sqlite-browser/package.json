@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite-browser",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": false,
   "type": "module",
   "description": "libSQL/SQLite WASM driver for @statewalker/db-api, targeting browser environments.",

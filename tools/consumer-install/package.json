@@ -3,6 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "description": "Packs the public packages and installs the tarballs into a clean project to check they import.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/statewalker/statewalker-db.git",
+    "directory": "tools/consumer-install"
+  },
+  "bugs": {
+    "url": "https://github.com/statewalker/statewalker-db/issues"
+  },
+  "homepage": "https://github.com/statewalker/statewalker-db/tree/main/tools/consumer-install#readme",
   "type": "module",
   "scripts": {
     "test": "vitest run"

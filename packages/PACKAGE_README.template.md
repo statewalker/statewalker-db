@@ -1,31 +1,39 @@
 # {{packageName}}
 
+## What it is
+
 {{packageDescription}}
 
-## Install
+<!-- One paragraph: what the package does. -->
+
+## Why it exists
+
+<!-- The problem it solves and what it replaces. Never drop this section. -->
+
+## How to use
 
 ```sh
 pnpm add {{packageName}}
 ```
 
-<!-- Mention required peer dependencies from package.json, if any. -->
+<!-- Required peer dependencies, if any. One row per `exports` subpath: import
+path, what it gives, environment (browser / node / worker). Then the happy-path
+API. -->
 
-## Entry points
+## Examples
 
-<!-- One row per `exports` subpath: import path, what it gives, environment (browser / node / worker). -->
-
-## Usage
-
-<!-- One minimal end-to-end example. Keep it short. -->
+<!-- Copy-pasteable snippets with real imports, one per main export. -->
 
 ```ts
 import {} from "{{packageName}}";
 ```
 
-## API
+## Internals
 
-<!-- List exported symbols with a one-line description each. -->
+<!-- Design choices and why, non-obvious algorithms, constraints and failure
+modes (with the actual error text), dependencies and why (say so if there are
+none). -->
 
-## Related
+## License
 
-<!-- Links to sibling packages in this monorepo that are typically used alongside this one. -->
+MIT

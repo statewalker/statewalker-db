@@ -1,30 +1,42 @@
 # @statewalker/db-duckdb-browser
 
-DuckDB WASM driver for [`@statewalker/db-api`](../db-api), for the browser. It
-starts DuckDB (`@duckdb/duckdb-wasm`) in a Web Worker and returns a `Db`. The
-database is in memory by default; with an OPFS path and self-hosted bundles it
-persists across page reloads.
+## What it is
 
-## Install
+A DuckDB driver for the browser that implements `Db` from
+`@statewalker/db-api`. It runs DuckDB WASM (`@duckdb/duckdb-wasm`) in a Web
+Worker. The database lives in memory, or in an OPFS file that survives page
+reloads.
+
+## Why it exists
+
+DuckDB WASM has its own asynchronous API built around Arrow tables, worker
+setup and bundle selection. This package hides that behind the four `Db`
+methods and returns rows as plain objects, so the same code runs on this
+driver and on `@statewalker/db-duckdb-node`.
+
+## How to use
 
 ```sh
 pnpm add @statewalker/db-duckdb-browser
 ```
 
-`@duckdb/duckdb-wasm` and `@statewalker/db-api` are regular dependencies; no
-peer dependencies.
-
-## Entry points
-
 | Import | Gives | Environment |
 | --- | --- | --- |
-| `@statewalker/db-duckdb-browser` | `newBrowserDuckDb`, type `BrowserDuckDbOptions`; re-exports types `Db`, `DbEntry`, `DbOptions` | browser (needs `Worker`) |
+| `@statewalker/db-duckdb-browser` | `newBrowserDuckDb`, type `BrowserDuckDbOptions`; types `Db`, `DbEntry`, `DbOptions` re-exported from `@statewalker/db-api` | browser (needs `Worker`) |
 
-The package also ships its TypeScript sources in `src/`.
+`newBrowserDuckDb(options?)` returns `Promise<Db>`.
 
-## Usage
+- `options.path`: an OPFS path such as `opfs://app.duckdb`. Omit it for an
+  in-memory database.
+- `options.bundles`: same-origin `DuckDBBundles` URLs. Required for OPFS.
+  Without it, the bundle is loaded from jsDelivr.
 
-In memory, with the DuckDB bundle loaded from jsDelivr:
+The returned `Db` implements `query`, `exec`, `flush` and `close`. Placeholders
+are DuckDB's (`$1`, `$2`, ...).
+
+## Examples
+
+In memory, bundle from jsDelivr:
 
 ```ts
 import { newBrowserDuckDb } from "@statewalker/db-duckdb-browser";
@@ -36,9 +48,8 @@ const rows = await db.query<{ x: number }>("SELECT x FROM t WHERE x > $1", [1]);
 await db.close();
 ```
 
-Persistent on OPFS. This needs same-origin bundle URLs (a cross-origin worker
-fails on OPFS file I/O). With Vite, for example (add `@duckdb/duckdb-wasm`
-to your own dependencies to import its files):
+Persistent on OPFS, with bundles served by Vite from your own origin (add
+`@duckdb/duckdb-wasm` to your dependencies to import its files):
 
 ```ts
 import { newBrowserDuckDb } from "@statewalker/db-duckdb-browser";
@@ -54,24 +65,41 @@ const db = await newBrowserDuckDb({
     eh: { mainModule: ehWasm, mainWorker: ehWorker },
   },
 });
-// ... writes ...
-await db.flush?.(); // runs CHECKPOINT so the writes reach the OPFS file
+await db.exec("CREATE TABLE IF NOT EXISTS notes (id INTEGER, body VARCHAR)");
+await db.exec("INSERT INTO notes VALUES (1, 'hello')");
+await db.flush?.(); // CHECKPOINT: without it the insert can be lost on reload
 ```
 
-## API
+## Internals
 
-- `newBrowserDuckDb(options?: BrowserDuckDbOptions): Promise<Db>`
-  - `options.path`: OPFS path (for example `opfs://app.duckdb`). If opening it
-    fails, the driver silently falls back to an in-memory database.
-  - `options.bundles`: `DuckDBBundles` with same-origin URLs. Required for OPFS.
-    Without it the bundle comes from jsDelivr (in-memory use only).
-- The returned `Db` implements `query`, `exec`, `flush` and `close`. `flush`
-  runs `CHECKPOINT` when the database is persistent and does nothing otherwise.
-  `close` closes the connection, terminates DuckDB and the worker.
-- Parameters use DuckDB placeholders (`$1`, `$2`, ...). Rows are plain objects
-  converted from Arrow results.
+```
+ page                              Web Worker
+ newBrowserDuckDb() --- AsyncDuckDB ---> DuckDB WASM ---> OPFS file (optional)
+ query() <-- Arrow table --> plain objects
+```
 
-## Related
+- **Same-origin worker for OPFS.** OPFS file I/O works only in a same-origin
+  worker. With `bundles`, the worker is created directly from your URL. Without
+  them, the jsDelivr worker is cross-origin and is started through a Blob that
+  calls `importScripts`; that worker crashes on OPFS file I/O, so use it for
+  in-memory databases only.
+- **`flush` runs `CHECKPOINT`.** DuckDB WASM writes the OPFS database file only
+  on `CHECKPOINT`. Writes not yet checkpointed can be lost on an abrupt
+  teardown such as a page reload. On an in-memory database `flush` does
+  nothing.
+- **Silent fallback to memory.** If `options.path` is set but opening it
+  throws, or `navigator.storage` is missing, the driver continues with an
+  in-memory database and raises no error. The symptom is data that is gone
+  after a reload.
+- **Rows.** Query results are Arrow tables; the driver copies each row's
+  fields into a plain object. Calls with parameters go through
+  `conn.prepare(sql)` and `stmt.query(...params)`; calls without parameters use
+  `conn.query(sql)`.
+- **Under Node.js** the module imports, but `newBrowserDuckDb()` rejects with
+  `Worker is not defined`. Use `@statewalker/db-duckdb-node` there.
+- **Dependencies:** `@duckdb/duckdb-wasm` (the engine), `@statewalker/db-api`
+  (the interface types).
 
-- [`@statewalker/db-api`](../db-api): the `Db` interface.
-- [`@statewalker/db-duckdb-node`](../db-duckdb-node): the Node.js counterpart.
+## License
+
+MIT

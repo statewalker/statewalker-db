@@ -1,70 +1,82 @@
 # SQLite FTS5 + Vector Search Demo
 
-Simple browser demo running **real SQLite** — the official
-[`@sqlite.org/sqlite-wasm`](https://www.npmjs.com/package/@sqlite.org/sqlite-wasm)
-build — with **no Turso / libSQL**. It shows:
+## What it is
 
-- SQLite **FTS5 full‑text search** (runs in the database)
-- **Vector search** by cosine similarity over stored float32 blobs
-- **Hybrid search** combining both
+A private Vite app (`@statewalker/sqlite-search-demo`, not published) that
+runs SQLite in the browser with the official `@sqlite.org/sqlite-wasm` build.
+It loads five sample documents into an in-memory database and offers three
+searches: FTS5 keyword search, vector search by cosine distance, and a hybrid
+view that shows both scores per document. It uses `@sqlite.org/sqlite-wasm`
+directly, not the `@statewalker/db-*` drivers.
 
-## Install
+## The shape: one page, one script
 
-```bash
-npm install
-npm run dev
+```
+index.html          inputs and buttons (FTS, vector, hybrid, reset)
+src/main.ts         opens :memory:, creates the tables, runs the searches
+vite.config.ts      keeps @sqlite.org/sqlite-wasm out of dependency pre-bundling
+
+docs (id, title, body, embedding BLOB)  --AFTER INSERT trigger-->  docs_fts (fts5: title, body)
 ```
 
-Then open the Vite URL in your browser.
+## How to run it
 
-## Features
+From the repository root:
 
-- FTS keyword search using `MATCH` + `bm25` (an FTS5 external‑content virtual table)
-- Semantic search: embeddings stored as real SQLite `BLOB`s, ranked by cosine
-  distance computed in JS
-- Hybrid query reporting both the bm25 score and the vector distance per document
+1. `pnpm install`
+2. `pnpm --filter @statewalker/sqlite-search-demo dev`
+3. Open the URL that Vite prints.
 
-## Real SQLite, not Turso/libSQL
+The page shows "Database ready (real SQLite / @sqlite.org/sqlite-wasm,
+in-memory)." when it has loaded. "Reset demo data" reloads the five documents.
 
-The original demo depended on `@tursodatabase/database` and used libSQL‑proprietary
-vector features (`F32_BLOB`, `libsql_vector_idx`, `vector32()`, `vector_top_k()`).
-This version uses only real SQLite:
+## Why it is the way it is
 
-- **FTS5** is standard SQLite and is essentially unchanged (external‑content table
-  + insert trigger + `bm25()` ranking).
-- **Embeddings** are stored in a plain `BLOB` column (little‑endian float32), and
-  **vector search** ranks documents by cosine distance computed in JavaScript.
+- **FTS5 runs in the database.** `docs_fts` is an external-content FTS5 table
+  filled by an `AFTER INSERT` trigger on `docs`. Results are ranked with
+  `bm25(docs_fts)` (lower is better).
+- **Vector search runs in JavaScript.** Embeddings are stored as the bytes of
+  a `Float32Array` in a plain `BLOB` column. The query vector is compared with
+  every row by cosine distance in JS. For five documents this is exact and
+  fast; it does not scale to a large corpus.
+- **Why not `sqlite-vec`.** SQLite in WASM cannot `load_extension()` at
+  runtime, so `sqlite-vec` would have to be compiled into a custom WASM binary.
+  `@sqlite.org/sqlite-wasm` does not include it. The prebuilt bundle that does,
+  `sqlite-vec-wasm-demo`, fails to start in every published version: its module
+  runs `await createWasm(); run();` and only then registers the sqlite3 API via
+  `Module.postRun.push(...)`, after `run()` has already consumed `postRun`.
+  Initialization aborts with
+  `Attempt to set Module.postRun after it has already been processed`. This
+  happens with any bundler, so app code cannot work around it.
+- **In-memory database.** No OPFS is used, so the page needs no
+  cross-origin-isolation headers.
+- **`optimizeDeps.exclude`.** `@sqlite.org/sqlite-wasm` finds its
+  `sqlite3.wasm` with `new URL("sqlite3.wasm", import.meta.url)`. Vite's
+  dependency pre-bundling would rewrite that, so the package is excluded. Vite
+  then serves the WASM in `dev` and emits it as a hashed asset in `build`.
 
-### Why vector search is done in JS (and not with sqlite-vec)
+## What will surprise you
 
-Real‑SQLite vector search normally means [`sqlite-vec`](https://github.com/asg017/sqlite-vec)
-(a `vec0` virtual table with `WHERE embedding MATCH ? ORDER BY distance`). A WASM
-build of SQLite cannot `load_extension()` at runtime (no host filesystem or dynamic
-linker inside the sandbox), so `sqlite-vec` must be **statically compiled into a
-custom WASM binary** — the stock `@sqlite.org/sqlite-wasm` package does not ship one.
+- **Hybrid results are not ranked.** "Hybrid search" lists every document with
+  `fts_score` (bm25; `1000` when the document does not match the text query)
+  and `vec_distance`. It does not combine the two into one ranking or sort by
+  them.
+- **Vectors have four dimensions, and length is not checked.** The sample
+  embeddings have 4 elements; the inputs take a JSON array such as
+  `[0.1,0.2,0.3,0.4]`. A longer query vector gives `NaN` distances; a shorter
+  one is compared on its first elements only. Input that is not a JSON array of
+  numbers throws `Vector must be a JSON array of numbers`.
+- **Keep the `optimizeDeps.exclude` entry.** Without it, esbuild pre-bundles
+  `@sqlite.org/sqlite-wasm` and rewrites the `import.meta.url` lookup of
+  `sqlite3.wasm`.
+- **Data does not survive a reload.** The database is `:memory:`.
 
-The upstream prebuilt bundle that does,
-[`sqlite-vec-wasm-demo`](https://www.npmjs.com/package/sqlite-vec-wasm-demo) (Alex
-Garcia / asg017), was evaluated and **is not currently dependable**: in every
-published version its Emscripten module runs `await createWasm(); run();` and only
-*afterwards* registers the sqlite3 API via `Module.postRun.push(...)`. Because the
-wasm is already instantiated by then, `run()` executes synchronously and consumes
-`postRun` before the API is registered, so initialization aborts with
-`Attempt to set Module.postRun after it has already been processed`. This happens
-regardless of bundler/transform (reproduced loading the module untouched from a
-static file), so it cannot be worked around from app code.
+## Reference
 
-The official `@sqlite.org/sqlite-wasm` build does **not** have this problem, so the
-demo uses it and moves the vector step to JS. For a five‑document demo this is
-exact and trivially fast; for a large corpus you would want a statically‑compiled
-`sqlite-vec` wasm (once a stable prebuilt exists) or a server‑side SQLite with the
-`sqlite-vec` extension loaded natively.
+| Command (from the repository root) | What it does |
+| --- | --- |
+| `pnpm --filter @statewalker/sqlite-search-demo dev` | Vite dev server |
+| `pnpm --filter @statewalker/sqlite-search-demo build` | production build into `apps/sqlite-search-demo/dist/` |
+| `pnpm --filter @statewalker/sqlite-search-demo preview` | serve the production build |
 
-## How the wasm is loaded
-
-The database is opened in‑memory (`:memory:`), so no OPFS / cross‑origin‑isolation
-headers are required. `@sqlite.org/sqlite-wasm` is imported normally
-(`import sqlite3InitModule from "@sqlite.org/sqlite-wasm"`); `vite.config.ts`
-excludes it from dependency pre‑bundling so its `new URL("sqlite3.wasm",
-import.meta.url)` wasm resolution is preserved — Vite emits the wasm as a hashed
-asset for `build` and serves it in `dev`.
+Dependencies: `@sqlite.org/sqlite-wasm` (runtime); `vite`, `typescript` (dev).

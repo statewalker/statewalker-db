@@ -68,10 +68,11 @@ const nearest = await db.query<{ id: number }>(
 
 ## Internals
 
-- **The engine loads once per page.** The first call starts the WASM module;
-  later calls reuse it, and their `wasmUrl` is ignored. A failed start is
-  cached too: if `sqlite3.wasm` was not found, every later call in that page
-  fails the same way until the page reloads.
+- **The engine loads once per `wasmUrl`.** The first call with a given
+  `wasmUrl` starts the WASM module; later calls with the same URL reuse it, and
+  a call with a different URL starts a separate engine. A failed start is
+  cached too: if `sqlite3.wasm` was not found at a URL, every later call with
+  that URL fails the same way until the page reloads.
 - **No OPFS.** `options.path` goes to `new sqlite3.oo1.DB(path, "c")`. The
   driver does not install or select an OPFS VFS.
 - **Synchronous engine, async interface.** `query` runs

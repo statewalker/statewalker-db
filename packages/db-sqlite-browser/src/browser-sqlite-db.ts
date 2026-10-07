@@ -7,13 +7,16 @@ export type BrowserDbOptions = DbOptions & {
   wasmUrl?: string;
 };
 
-let sqlite3Promise: Promise<Sqlite3Static> | undefined;
+/** One engine instance per `wasmUrl`, started on first use. */
+const sqlite3Promises = new Map<string, Promise<Sqlite3Static>>();
 
 function getSqlite3(wasmUrl: string): Promise<Sqlite3Static> {
+  let sqlite3Promise = sqlite3Promises.get(wasmUrl);
   if (!sqlite3Promise) {
     sqlite3Promise = sqlite3InitModule({
       locateFile: (file: string) => (file.endsWith(".wasm") ? wasmUrl : file),
     });
+    sqlite3Promises.set(wasmUrl, sqlite3Promise);
   }
   return sqlite3Promise;
 }

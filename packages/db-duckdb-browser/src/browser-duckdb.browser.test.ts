@@ -1,6 +1,7 @@
+import * as duckdb from "@duckdb/duckdb-wasm";
 import type { Db } from "@statewalker/db-api";
 import { runDbConformance } from "@statewalker/db-tests";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { newBrowserDuckDb } from "./browser-duckdb.js";
 
 /**
@@ -166,6 +167,42 @@ describe("newBrowserDuckDb", () => {
 
       expect(rows).toHaveLength(1);
       expect(rows[0]?.id).toBe(2);
+    });
+  });
+
+  describe("prepared statements", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("closes the statement of every parameterised query", async () => {
+      db = await newBrowserDuckDb();
+      const close = vi.spyOn(duckdb.AsyncPreparedStatement.prototype, "close");
+      await db.query("SELECT $1::INTEGER AS x", [1]);
+      await db.query("SELECT $1::INTEGER AS x", [2]);
+      await expect(db.query("SELECT $1::INTEGER AS x", ["not a number"])).rejects.toThrow();
+      expect(close).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("persistent path", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
+    it("rejects instead of falling back to memory when the path cannot be opened", async () => {
+      vi.spyOn(duckdb.AsyncDuckDB.prototype, "open").mockRejectedValue(new Error("open failed"));
+      await expect(newBrowserDuckDb({ path: "opfs://broken.duckdb" })).rejects.toThrow(
+        /opfs:\/\/broken\.duckdb/,
+      );
+    });
+
+    it("rejects instead of falling back to memory when OPFS is unavailable", async () => {
+      vi.stubGlobal("navigator", {});
+      await expect(newBrowserDuckDb({ path: "opfs://unavailable.duckdb" })).rejects.toThrow(
+        /opfs:\/\/unavailable\.duckdb/,
+      );
     });
   });
 });

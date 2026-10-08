@@ -1,5 +1,11 @@
 # @statewalker/db-sqlite-browser
 
+## 0.1.4
+
+### Patch Changes
+
+- 33a8831: `newBrowserSqliteDb` honors `wasmUrl` on every call: the engine is cached per URL instead of once per page.
+
 ## 0.1.3
 
 ### Patch Changes

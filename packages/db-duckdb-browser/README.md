@@ -27,7 +27,8 @@ pnpm add @statewalker/db-duckdb-browser
 `newBrowserDuckDb(options?)` returns `Promise<Db>`.
 
 - `options.path`: an OPFS path such as `opfs://app.duckdb`. Omit it for an
-  in-memory database.
+  in-memory database. If the path cannot be opened, the call rejects with
+  `Cannot open DuckDB database "<path>"`; it never falls back to memory.
 - `options.bundles`: same-origin `DuckDBBundles` URLs. Required for OPFS.
   Without it, the bundle is loaded from jsDelivr.
 
@@ -87,13 +88,17 @@ await db.flush?.(); // CHECKPOINT: without it the insert can be lost on reload
   on `CHECKPOINT`. Writes not yet checkpointed can be lost on an abrupt
   teardown such as a page reload. On an in-memory database `flush` does
   nothing.
-- **Silent fallback to memory.** If `options.path` is set but opening it
-  throws, or `navigator.storage` is missing, the driver continues with an
-  in-memory database and raises no error. The symptom is data that is gone
-  after a reload.
+- **No fallback to memory.** If `options.path` is set but `navigator.storage`
+  is missing, the call rejects with
+  `Cannot open DuckDB database "<path>": OPFS is unavailable`. If opening the
+  path throws, the worker is terminated and the call rejects with
+  `Cannot open DuckDB database "<path>"`, the engine's error as `cause`. An
+  in-memory database is created only when `options.path` is omitted, so data
+  is never silently lost on reload.
 - **Rows.** Query results are Arrow tables; the driver copies each row's
   fields into a plain object. Calls with parameters go through
-  `conn.prepare(sql)` and `stmt.query(...params)`; calls without parameters use
+  `conn.prepare(sql)` and `stmt.query(...params)`, and the statement is closed
+  after each call, also when the query fails; calls without parameters use
   `conn.query(sql)`.
 - **Under Node.js** the module imports, but `newBrowserDuckDb()` rejects with
   `Worker is not defined`. Use `@statewalker/db-duckdb-node` there.

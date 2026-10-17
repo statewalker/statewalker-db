@@ -231,7 +231,10 @@ function parseGroupPrefix(src: string, start: number): GroupPrefix {
   return { kind: "unknown" };
 }
 
-/** `\xHH`, `\uHHHH`, `\u{H…}`: escapes that stand for one literal character. */
+/**
+ * `\xHH`, `\uHHHH`: escapes that stand for one literal character. `\u{…}` is not one:
+ * the planner compiles without the `u` flag, where it means "u" repeated or the text "u{…}".
+ */
 function parseEscapedLiteral(
   src: string,
   start: number,
@@ -243,15 +246,6 @@ function parseEscapedLiteral(
     return { char: String.fromCharCode(Number.parseInt(hex, 16)), end: start + 4 };
   }
   if (kind === "u") {
-    if (src[start + 2] === "{") {
-      const close = src.indexOf("}", start + 3);
-      if (close < 0) return undefined;
-      const hex = src.slice(start + 3, close);
-      if (!/^[0-9a-fA-F]+$/.test(hex)) return undefined;
-      const codePoint = Number.parseInt(hex, 16);
-      if (codePoint > 0x10ffff) return undefined;
-      return { char: String.fromCodePoint(codePoint), end: close + 1 };
-    }
     const hex = src.slice(start + 2, start + 6);
     if (!/^[0-9a-fA-F]{4}$/.test(hex)) return undefined;
     return { char: String.fromCharCode(Number.parseInt(hex, 16)), end: start + 6 };
@@ -312,6 +306,8 @@ function parseLiteralClass(src: string, start: number, end: number): string[] | 
     chars.add(c);
     i += 1;
   }
+  // A surrogate half would split an astral character the index sees as one code point.
+  if ([...chars].some((ch) => /[\ud800-\udfff]/.test(ch))) return null;
   return chars.size === 0 ? null : [...chars];
 }
 

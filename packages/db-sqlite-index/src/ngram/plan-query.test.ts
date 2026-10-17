@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fold } from "./fold.js";
 import { MAX_PATTERN_LENGTH, planQuery } from "./plan-query.js";
+import { gramsOf, trigrams } from "./trigrams.js";
 
 const REGEX_TABLE: Array<[string, string[][] | null]> = [
   ["abc", [["abc"]]],
@@ -80,6 +81,9 @@ const MATCHES: Array<[string, string]> = [
   ["(\\dabc)def", "1abcdef"],
   ["x(a+)bcd", "xaabcd"],
   ["(?<=abc)def", "abcdef"],
+  ["\\u{1F600}abc", "u{1F600}abc"],
+  ["x\\u{3}yz", "xuuuyz"],
+  ["[😀]abc", "😀abc"],
 ];
 
 describe("planQuery (regex)", () => {
@@ -91,9 +95,10 @@ describe("planQuery (regex)", () => {
     expect(new RegExp(pattern).test(text)).toBe(true);
     const { branches } = planQuery(pattern, { regex: true });
     const folded = fold(text);
-    expect(branches === null || branches.some((b) => b.every((l) => folded.includes(l)))).toBe(
-      true,
-    );
+    const grams = new Set(trigrams(text));
+    const covered = (b: string[]) =>
+      b.every((l) => folded.includes(l) && gramsOf(l).every((g) => grams.has(g)));
+    expect(branches === null || branches.some(covered)).toBe(true);
   });
 
   it("folds literals whatever the case sensitivity", () => {

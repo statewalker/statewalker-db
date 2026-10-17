@@ -48,7 +48,8 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 4. Optional, the browser drivers in headless Chromium:
    1. `pnpm exec playwright install chromium` (once)
    2. `pnpm run test:browser`
-5. Before pushing: `pnpm run lint:check`, `pnpm run format:check`,
+5. Optional, the Durable Object driver on a real celld: `pnpm run test:do` (needs celld 0.6.x on PATH).
+6. Before pushing: `pnpm run lint:check`, `pnpm run format:check`,
    `pnpm run typecheck`. CI runs these together with build and test.
 
 ## Why it is the way it is
@@ -93,6 +94,7 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 - **A browser driver imports fine under Node.js, then fails.**
   `newBrowserDuckDb()` rejects with `Worker is not defined`;
   `newBrowserSqliteDb()` aborts because it cannot load `/sqlite3.wasm`.
+- **`pnpm run test:do` starts a celld node.** It runs `celld dev` on a free port with `--clean` on `packages/db-sqlite-do/test-do/.celld/dev` and stops it at the end; a version other than 0.6.x stops it before any test.
 
 ## Reference
 

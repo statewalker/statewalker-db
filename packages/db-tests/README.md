@@ -38,7 +38,8 @@ conformance")` block for SQLite drivers (`makeDb: () => Promise<Db>`, a fresh em
 time). Its scenarios are plain async functions with no Vitest import, exported as
 `sqliteTransactionScenarios` and from the subpath
 `@statewalker/db-tests/sqlite-transaction-scenarios`, so a Durable Object worker can bundle
-and run the very same checks against real DO SQLite.
+and run the very same checks against real DO SQLite. `{ skip: [name, …] }` drops the
+scenarios a platform cannot meet, by name.
 
 ## Examples
 

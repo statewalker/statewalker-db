@@ -59,8 +59,14 @@ export function newFakeDoStorage(): FakeDoStorage {
         db.exec("COMMIT");
         return result;
       } catch (error) {
-        // ON CONFLICT ROLLBACK has already ended the transaction; a second ROLLBACK would mask `error`.
-        if (db.isTransaction) db.exec("ROLLBACK");
+        // Like the platform: when SQLite already ended the transaction (ON CONFLICT ROLLBACK), the
+        // rollback fails and its error replaces the callback's.
+        if (!db.isTransaction) {
+          throw new Error(
+            "a transaction rollback failed: cannot rollback - no transaction is active",
+          );
+        }
+        db.exec("ROLLBACK");
         throw error;
       }
     },

@@ -61,7 +61,7 @@ const db = newDoSqliteDb(newFakeDoStorage());
 `pnpm test:do` (from the repository root) builds the workspace, starts `celld dev` on
 `packages/db-sqlite-do/test-do/` with a clean state on a free port, and runs, inside a real
 Durable Object, the shared `Db` conformance suite (through a small HTTP bridge), every scenario
-listed in `test-do/scenarios.ts` (the SQLite transaction scenarios plus the smoke scenarios other
+listed in `test-do/scenarios.ts` (the SQLite transaction scenarios a DO can meet, plus the smoke scenarios other
 packages register there), and a platform probe whose expectations the `./fake` must also meet. It
 needs celld 0.6.x on `PATH`; with another version it stops at once with
 `test:do needs celld 0.6.x on PATH, found "<version>"`. It stops only the celld process it
@@ -76,12 +76,14 @@ started. It is not part of `pnpm test`: run it before a release.
 - **Limits of DO SQLite, and what they look like:** more than 100 bound parameters rejects with
   `too many SQL variables` (pass id lists as one JSON string to `json_each(?)`); a BLOB or string
   over about 2 MB rejects with `string or blob too big`; `BEGIN`, `SAVEPOINT` and `PRAGMA` reject
-  with `not authorized`. A statement whose conflict clause makes SQLite itself end the
-  transaction (`ON CONFLICT ROLLBACK`) inside `inTransaction` does roll back, but on celld 0.6.2
-  the caller sees the platform's failed rollback, not the constraint error:
-  `a transaction rollback failed: storage.transaction: control storage transaction: cannot
-  rollback - no transaction is active`, and the DO call in flight rejects (the next call gets a
-  fresh instance). The fake reports the constraint error instead. An operation that runs past the platform deadline (15 s on celld) is
+  with `not authorized`.
+- **`ON CONFLICT ROLLBACK` and `RAISE(ROLLBACK)` fail the whole DO call.** Inside `inTransaction`
+  on a Durable Object, a statement that makes SQLite itself end the transaction rolls the data
+  back, but the call in flight rejects with `a transaction rollback failed: … cannot rollback - no
+  transaction is active` instead of the constraint error, and the DO instance is reset (observed
+  on celld 0.6.2; Cloudflare unverified). Use the default `ABORT` conflict resolution inside
+  transactions. The fake rejects with the same message, so `inTransaction` callers see it in unit
+  tests too. An operation that runs past the platform deadline (15 s on celld) is
   retried rather than failed, so keep each write step small.
 - **BLOBs are converted both ways.** Typed-array parameters are bound as `ArrayBuffer`;
   `ArrayBuffer` values read back become `Uint8Array`, as on every other SQLite driver.

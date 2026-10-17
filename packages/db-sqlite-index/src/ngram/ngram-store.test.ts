@@ -9,7 +9,7 @@ const DRIVERS: Array<[string, () => Promise<Db>]> = [
   ["node:sqlite", () => newNodeSqliteDb()],
   ["do (fake storage)", async () => newDoSqliteDb(newFakeDoStorage())],
 ];
-const STORES = ["fts5"] as const;
+const STORES = ["fts5", "postings"] as const;
 
 const UNLIMITED: NgramSearchOptions = { limit: 1e9, candidateBudget: 1e9 };
 
@@ -270,6 +270,17 @@ describe("NgramStore options", () => {
   it("rejects a prefix that is not a plain SQL identifier", async () => {
     const db = await newNodeSqliteDb();
     expect(() => new NgramStore({ db, prefix: "x; DROP TABLE y" })).toThrow(/prefix/);
+    await db.close();
+  });
+});
+
+describe("NgramStore store choice", () => {
+  it("rejects opening a prefix with the other store", async () => {
+    const db = await newNodeSqliteDb();
+    await new NgramStore({ db, prefix: "m_", store: "fts5" }).init();
+    await expect(new NgramStore({ db, prefix: "m_", store: "postings" }).init()).rejects.toThrow(
+      'ngram: index "m_" was created with store "fts5", opened with "postings"',
+    );
     await db.close();
   });
 });

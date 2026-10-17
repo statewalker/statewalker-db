@@ -3,6 +3,7 @@ import { inTransaction } from "@statewalker/db-sqlite";
 import { type GramBackend, type NgramItem, newFts5Backend } from "./fts5-backend.js";
 import { chunkJson } from "./json-chunks.js";
 import { planQuery } from "./plan-query.js";
+import { newPostingsBackend } from "./postings-backend.js";
 
 export type { NgramItem };
 export type NgramMatch = { start: number; end: number };
@@ -42,12 +43,13 @@ export class NgramStore {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(prefix)) {
       throw new Error(`ngram: prefix "${prefix}" must match /^[A-Za-z_][A-Za-z0-9_]*$/`);
     }
-    if (store !== "fts5") throw new Error(`ngram: unknown store "${store}"`);
+    if (store !== "fts5" && store !== "postings")
+      throw new Error(`ngram: unknown store "${store}"`);
     this.#db = db;
     this.#prefix = prefix;
     this.idTable = `${prefix}texts`;
     this.#store = store;
-    this.#backend = newFts5Backend(prefix);
+    this.#backend = store === "fts5" ? newFts5Backend(prefix) : newPostingsBackend(prefix);
   }
 
   async init(): Promise<void> {

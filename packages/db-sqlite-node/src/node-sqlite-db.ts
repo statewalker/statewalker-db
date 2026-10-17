@@ -1,30 +1,18 @@
-import type { InValue } from "@libsql/client";
-import { createClient } from "@libsql/client";
-import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import type { Db, DbOptions } from "@statewalker/db-api";
+import { newSerialisedSqliteDb } from "@statewalker/db-sqlite";
 
 /**
- * Create a libSQL-backed {@link Db} using the native Node.js client.
+ * Create a SQLite {@link Db} on Node.js's built-in `node:sqlite`.
  *
- * @param options.path  File path for persistent storage. Omit for in-memory.
+ * @param options.path  Database file. Omit for an in-memory database.
  */
 export async function newNodeSqliteDb(options?: DbOptions): Promise<Db> {
-  const url = options?.path ? `file:${options.path}` : ":memory:";
-  const client = createClient({ url });
-
-  return {
-    async query<T = DbEntry>(sql: string, params?: unknown[]): Promise<T[]> {
-      const result = await client.execute(
-        params && params.length > 0 ? { sql, args: params as InValue[] } : sql,
-      );
-      return result.rows as unknown as T[];
-    },
-
-    async exec(sql: string): Promise<void> {
-      await client.execute(sql);
-    },
-
-    async close(): Promise<void> {
-      client.close();
-    },
-  };
+  const db = new DatabaseSync(options?.path ?? ":memory:");
+  return newSerialisedSqliteDb({
+    all: (sql, params) =>
+      db.prepare(sql).all(...(params as SQLInputValue[])) as Record<string, unknown>[],
+    exec: (sql) => db.exec(sql),
+    close: () => db.close(),
+  });
 }

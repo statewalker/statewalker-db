@@ -3,7 +3,7 @@
   "version": "0.2.1",
   "private": false,
   "type": "module",
-  "description": "libSQL/SQLite client driver for @statewalker/db-api, targeting Node.js environments.",
+  "description": "SQLite driver for @statewalker/db-api on Node.js's built-in node:sqlite, with transactions through @statewalker/db-sqlite.",
   "bugs": {
     "url": "https://github.com/statewalker/statewalker-db/issues"
   },
@@ -41,7 +41,7 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@libsql/client": "catalog:",
+    "@statewalker/db-sqlite": "workspace:^",
     "@statewalker/db-api": "workspace:^"
   },
   "devDependencies": {

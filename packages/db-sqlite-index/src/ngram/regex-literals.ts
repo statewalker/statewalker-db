@@ -29,15 +29,21 @@ type GroupPrefix = { kind: "consuming"; innerStart: number } | { kind: "assertio
 export function regexLiterals(regex: RegExp): string[][] {
   // v-mode class syntax desyncs skipClass and would invent literals.
   if (regex.flags.includes("v")) return [[]];
-  return expandRegion(regex.source, 0, regex.source.length);
+  return expandRegion(regex.source, 0, regex.source.length).dnf;
 }
 
-function expandRegion(src: string, start: number, end: number): string[][] {
+/** `exact`: every arm is one contiguous literal that is the arm's whole match, with nothing dropped. */
+type Region = { dnf: string[][]; exact: boolean };
+
+function expandRegion(src: string, start: number, end: number): Region {
   const dnf: string[][] = [];
+  let exact = true;
   for (const [bStart, bEnd] of splitTopLevelAlternation(src, start, end)) {
-    for (const branch of expandBranch(src, bStart, bEnd)) dnf.push(branch);
+    const arm = expandBranch(src, bStart, bEnd);
+    for (const branch of arm.dnf) dnf.push(branch);
+    exact = exact && arm.exact;
   }
-  return dnf;
+  return { dnf, exact };
 }
 
 function splitTopLevelAlternation(
@@ -71,8 +77,11 @@ function splitTopLevelAlternation(
   return spans;
 }
 
-function expandBranch(src: string, start: number, end: number): string[][] {
+function expandBranch(src: string, start: number, end: number): Region {
   let cross: LiveBranch[] = [{ literals: [], run: "" }];
+  // Set when part of the match is not captured in a literal (wildcard, optional or repeated
+  // atom, assertion): gluing this branch to neighbouring text would be unsound.
+  let lossy = false;
   const flushRuns = () => {
     for (const b of cross) {
       if (b.run.length > 0) {
@@ -84,11 +93,15 @@ function expandBranch(src: string, start: number, end: number): string[][] {
   // Append `text` repeated by the quantifier's mandatory copies to every live run.
   const appendRun = (text: string, q: Quantifier) => {
     if (q.copies === 0) {
+      lossy = true;
       flushRuns();
       return;
     }
     for (const b of cross) b.run += text.repeat(q.copies);
-    if (q.openEnded) flushRuns();
+    if (q.openEnded) {
+      lossy = true;
+      flushRuns();
+    }
   };
 
   let i = start;
@@ -115,6 +128,7 @@ function expandBranch(src: string, start: number, end: number): string[][] {
       }
       // \d \w \s \b, backrefs, \p{…}: a wildcard; consume its payload.
       if (/[a-zA-Z0-9]/.test(next)) {
+        lossy = true;
         flushRuns();
         i = peekQuantifier(src, skipSpecialEscape(src, i)).end;
         continue;
@@ -137,13 +151,17 @@ function expandBranch(src: string, start: number, end: number): string[][] {
         q.copies > 1 ||
         cross.length * chars.length > MAX_DNF
       ) {
+        lossy = true;
         flushRuns();
         continue;
       }
       cross = cross.flatMap((b) =>
         chars.map((ch) => ({ literals: b.literals.slice(), run: b.run + ch })),
       );
-      if (q.openEnded) flushRuns();
+      if (q.openEnded) {
+        lossy = true;
+        flushRuns();
+      }
       continue;
     }
 
@@ -153,13 +171,17 @@ function expandBranch(src: string, start: number, end: number): string[][] {
       const q = peekQuantifier(src, groupEnd);
       i = q.end;
       if (group.kind !== "consuming" || q.copies === 0) {
+        lossy = true;
         flushRuns();
         continue;
       }
-      const inner = expandRegion(src, group.innerStart, groupEnd - 1);
-      // Fold into the run only when every arm is one contiguous literal used once:
-      // a repeated group (`(a|b){3}`) may pick different arms per copy.
-      const foldable = q.copies === 1 && inner.length > 0 && inner.every((b) => b.length === 1);
+      const { dnf: inner, exact } = expandRegion(src, group.innerStart, groupEnd - 1);
+      // Fold into the run only when every arm is one contiguous literal used once and is the
+      // arm's whole match: a repeated group (`(a|b){3}`) may pick different arms per copy, and
+      // a wildcard at an arm's edge (`x(.abc)`) must not be glued away.
+      const foldable =
+        exact && q.copies === 1 && inner.length > 0 && inner.every((b) => b.length === 1);
+      lossy = lossy || q.openEnded || !foldable;
       if (foldable && cross.length * inner.length <= MAX_DNF) {
         cross = cross.flatMap((b) =>
           inner.map((arm) => ({ literals: b.literals.slice(), run: b.run + (arm[0] ?? "") })),
@@ -167,6 +189,7 @@ function expandBranch(src: string, start: number, end: number): string[][] {
         if (q.openEnded) flushRuns();
         continue;
       }
+      lossy = true;
       flushRuns();
       if (cross.length * inner.length > MAX_DNF) continue;
       cross = cross.flatMap((b) =>
@@ -176,6 +199,7 @@ function expandBranch(src: string, start: number, end: number): string[][] {
     }
 
     if (c === ".") {
+      lossy = true;
       flushRuns();
       i = peekQuantifier(src, i + 1).end;
       continue;
@@ -186,7 +210,10 @@ function expandBranch(src: string, start: number, end: number): string[][] {
     appendRun(c, q);
   }
   flushRuns();
-  return cross.map((b) => b.literals);
+  return {
+    dnf: cross.map((b) => b.literals),
+    exact: !lossy && cross.every((b) => b.literals.length === 1),
+  };
 }
 
 /** Where a group's consuming body starts; lookarounds and unknown `(?…)` are not consuming. */
@@ -311,7 +338,6 @@ function peekQuantifier(src: string, i: number): Quantifier {
 function skipClass(src: string, i: number): number {
   let j = i + 1;
   if (src[j] === "^") j += 1;
-  if (src[j] === "]") j += 1;
   while (j < src.length && src[j] !== "]") j += src[j] === "\\" && j + 1 < src.length ? 2 : 1;
   return j < src.length ? j + 1 : j;
 }

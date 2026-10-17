@@ -107,7 +107,11 @@ const WorkerClass = (
 ).Worker;
 
 /** Run one action in a fresh Dedicated Worker, then terminate it (as a page reload would). */
-function inWorker(message: { path: string; action: "write" | "count" }): Promise<number> {
+function inWorker(
+  message:
+    | { path: string; action: "write" | "count" }
+    | { path: string; action: "open-many"; files: number; capacity?: number },
+): Promise<number> {
   return new Promise((resolve, reject) => {
     const worker = new WorkerClass(new URL("../test/opfs-test-worker.ts", import.meta.url), {
       type: "module",
@@ -136,5 +140,20 @@ describe("OPFS persistence (opfs-sahpool)", () => {
     const path = `/persist-${Date.now()}.db`;
     expect(await inWorker({ path, action: "write" })).toBe(1);
     expect(await inWorker({ path, action: "count" })).toBe(1);
+  });
+
+  // Order matters: the pool's capacity is stored in OPFS and only grows, so the default-size
+  // case must run before any test raises it. Files stay in the pool after close, so the
+  // second case leaves room for the ones the first left behind.
+  it("runs out of pool files with the default capacity", async () => {
+    const path = `/full-${Date.now()}`;
+    await expect(inWorker({ path, action: "open-many", files: 10 })).rejects.toThrow(
+      /SQLITE_CANTOPEN/,
+    );
+  });
+
+  it("opens more databases once capacity is raised", async () => {
+    const path = `/many-${Date.now()}`;
+    expect(await inWorker({ path, action: "open-many", files: 10, capacity: 32 })).toBe(10);
   });
 });

@@ -1,3 +1,5 @@
+import type { Db } from "@statewalker/db-api";
+import { SQLITE_TRANSACTION } from "@statewalker/db-sqlite";
 import { describe, expect, it } from "vitest";
 import { PART_BYTES } from "./sql-segment-store.js";
 import { BACKENDS, bruteForce, D, dataset } from "./test-fixtures.js";
@@ -115,21 +117,55 @@ for (const [name, open] of Object.entries(BACKENDS)) {
     });
 
     it("search during merge returns correct hits; retired rows are gone after reopen", async () => {
-      const { db, index } = await setup();
+      const real = await open();
+      const gate = holdNextLiveness(real);
+      const index = new VectorIndex({ db: gate.db, prefix: "vec_", dims: D });
+      await index.init();
       const items = dataset(1200, 15);
       await index.upsert(items.slice(0, 600));
       await index.compact();
       await index.upsert(items.slice(600));
       await index.compact();
       const target = items[700] as (typeof items)[number];
-      const [hits] = await Promise.all([index.search(target.vector, { k: 1 }), index.merge()]);
-      expect(hits[0]?.id).toBe(target.id);
+      gate.arm();
+      const searching = index.search(target.vector, { k: 1 });
+      await gate.held; // the search has read its lists and waits on its liveness read
+      expect(await index.merge()).toBe(1200);
+      gate.release();
+      expect((await searching)[0]?.id).toBe(target.id);
 
-      const reopened = new VectorIndex({ db, prefix: "vec_", dims: D });
+      const reopened = new VectorIndex({ db: real, prefix: "vec_", dims: D });
       await reopened.init();
-      const [row] = await db.query<{ n: number }>("SELECT count(DISTINCT gen) AS n FROM vec_seg");
+      const [row] = await real.query<{ n: number }>("SELECT count(DISTINCT gen) AS n FROM vec_seg");
       expect(Number(row?.n)).toBe(1);
       expect((await reopened.search(target.vector, { k: 1 }))[0]?.id).toBe(target.id);
     });
   });
+}
+
+/** Wraps `real` so that, once armed, the next liveness read (`SELECT id, gen`) waits for `release()`. */
+function holdNextLiveness(real: Db) {
+  let armed = false;
+  let onHeld = () => {};
+  let release = () => {};
+  const held = new Promise<void>((r) => {
+    onHeld = r;
+  });
+  const released = new Promise<void>((r) => {
+    release = r;
+  });
+  const db = {
+    async query<T>(sql: string, params?: unknown[]): Promise<T[]> {
+      if (armed && sql.includes("SELECT id, gen")) {
+        armed = false;
+        onHeld();
+        await released;
+      }
+      return real.query<T>(sql, params);
+    },
+    exec: (sql: string) => real.exec(sql),
+    close: () => real.close(),
+    [SQLITE_TRANSACTION]: (real as { [SQLITE_TRANSACTION]?: unknown })[SQLITE_TRANSACTION],
+  } as Db;
+  return { db, held, release, arm: () => (armed = true) };
 }

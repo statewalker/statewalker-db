@@ -55,6 +55,10 @@ await index.merge();
 // Read stored vectors back (normalised for cosine), and drop the whole index.
 const vectors = await index.getVectors([1, 2]); // Map<id, Float32Array>
 await dropVectorIndex(db, "vec_");
+
+// `idTable` names a table whose `id` column holds exactly the live ids:
+// join it in SQL to count or enumerate what the index contains.
+const [{ n }] = await db.query<{ n: number }>(`SELECT count(*) AS n FROM ${index.idTable}`);
 ```
 
 Every write method runs its own `inTransaction`. Never call one from inside an
@@ -96,8 +100,9 @@ A segment below 2048 vectors is one flat list: k-means would not pay off.
 | `{p}seg` | each list's searchable block (ids, sign bits, norms, int8 codes), in parts |
 | `{p}f32` | each list's float32 block, in parts |
 
-Every BLOB is split into parts of at most 1 MiB, and id lists travel as one
-`json_each(?)` parameter. Durable Object SQLite would otherwise refuse with
+Each list's searchable and float32 blocks are split into parts of at most
+1 MiB (tail and centroid rows hold one vector, `dims × 4` bytes, and are not
+split), and id lists travel as one `json_each(?)` parameter. Durable Object SQLite would otherwise refuse with
 "string or blob too big" or "too many SQL variables". A probe reads the needed
 lists of a segment in one query. Read blocks go into an LRU cache
 (`cacheBytes`, default 64 MiB), which never goes stale because a generation is
@@ -111,6 +116,9 @@ never modified.
 - **`merge()` holds every live segment vector in memory** while it runs.
 - **Opening existing tables with different `dims` or `metric` fails** with
   `vector-index: tables were created with {"dims":…,"metric":…}, not …`.
+- **A search or `getVectors` that overlaps a `compact()` or `merge()` commit runs
+  again** on the new segments, so it does not judge old segment rows against the
+  new liveness. The third attempt stands even if a third commit overlaps it.
 - **Retired segment rows are deleted once no search reads them.** If the process
   stops before that, the next `init()` sweeps them.
 

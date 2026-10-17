@@ -90,6 +90,8 @@ export class VectorIndex {
   #queue: Promise<unknown> = Promise.resolve();
   #maintaining = false;
   #ready = false;
+  /** Bumped before and after each commit that changes the segment list: odd while one runs. */
+  #epoch = 0;
 
   constructor(opts: VectorIndexOptions) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(opts.prefix)) {
@@ -238,16 +240,14 @@ export class VectorIndex {
     const d = this.dims;
     const filter = opts.filter;
 
-    // Tail: exact, from memory.
-    const tailTop = new TopK<number>(k);
-    for (const [id, { vector }] of this.#tail) {
-      if (filter && !filter(id)) continue;
-      tailTop.push(distance(this.metric, q, 0, vector, 0, d), id);
-    }
+    return this.#read(async (segments) => {
+      // Tail: exact, from memory.
+      const tailTop = new TopK<number>(k);
+      for (const [id, { vector }] of this.#tail) {
+        if (filter && !filter(id)) continue;
+        tailTop.push(distance(this.metric, q, 0, vector, 0, d), id);
+      }
 
-    const segments = this.#segments;
-    for (const s of segments) this.#refs.set(s, (this.#refs.get(s) ?? 0) + 1);
-    try {
       // Stage 1: probe lists, keep the best rows of each by estimated residual distance.
       type Hit = Candidate & { seg: SegmentIndex; data: ListData };
       const hits: Hit[] = [];
@@ -295,46 +295,45 @@ export class VectorIndex {
       for (const r of segResults) final.push(r.distance, r.id);
       for (const e of tailTop.sorted()) final.push(e.score, e.item);
       return final.sorted().map((e) => ({ id: e.item, distance: e.score }));
-    } finally {
-      for (const s of segments) this.#refs.set(s, (this.#refs.get(s) ?? 1) - 1);
-      void this.#reap().catch(() => {}); // a failed reap leaves rows that init() sweeps
-    }
+    });
   }
 
   /** The stored vectors of the live `ids` (normalised for cosine); unknown or deleted ids are absent. */
   async getVectors(ids: number[]): Promise<Map<number, Float32Array>> {
     this.#assertReady();
     ids.forEach(assertId);
-    const out = new Map<number, Float32Array>();
-    const gens = await this.#generations(ids);
-    const wanted = new Map<number, Set<number>>(); // gen -> ids
-    for (const [id, gen] of gens) {
-      if (gen === 0) {
-        const entry = this.#tail.get(id);
-        if (entry) out.set(id, entry.vector.slice());
-        continue;
+    return this.#read(async (segments) => {
+      const out = new Map<number, Float32Array>();
+      const gens = await this.#generations(ids);
+      const wanted = new Map<number, Set<number>>(); // gen -> ids
+      for (const [id, gen] of gens) {
+        if (gen === 0) {
+          const entry = this.#tail.get(id);
+          if (entry) out.set(id, entry.vector.slice());
+          continue;
+        }
+        const set = wanted.get(gen) ?? new Set<number>();
+        set.add(id);
+        wanted.set(gen, set);
       }
-      const set = wanted.get(gen) ?? new Set<number>();
-      set.add(id);
-      wanted.set(gen, set);
-    }
-    for (const seg of this.#segments) {
-      const set = wanted.get(seg.gen);
-      if (!set) continue;
-      for (let c = 0; c < seg.nlist && set.size > 0; c++) {
-        if (seg.counts[c] === 0) continue;
-        const [data] = (await this.#store.lists(seg, [c])) as [ListData];
-        let floats: Float32Array | null = null;
-        for (let r = 0; r < data.ids.length; r++) {
-          const id = data.ids[r] as number;
-          if (!set.has(id)) continue;
-          floats ??= await this.#store.floats(seg, c);
-          out.set(id, floats.slice(r * this.dims, (r + 1) * this.dims));
-          set.delete(id);
+      for (const seg of segments) {
+        const set = wanted.get(seg.gen);
+        if (!set) continue;
+        for (let c = 0; c < seg.nlist && set.size > 0; c++) {
+          if (seg.counts[c] === 0) continue;
+          const [data] = (await this.#store.lists(seg, [c])) as [ListData];
+          let floats: Float32Array | null = null;
+          for (let r = 0; r < data.ids.length; r++) {
+            const id = data.ids[r] as number;
+            if (!set.has(id)) continue;
+            floats ??= await this.#store.floats(seg, c);
+            out.set(id, floats.slice(r * this.dims, (r + 1) * this.dims));
+            set.delete(id);
+          }
         }
       }
-    }
-    return out;
+      return out;
+    });
   }
 
   // ------------------------------------------------------------ maintenance
@@ -358,28 +357,30 @@ export class VectorIndex {
       });
       const built = this.#build(ids, vectors);
 
-      await this.#exclusive(async () => {
-        const ref = this.#refOf(built, n);
-        const next: State = {
-          ...this.#state,
-          nextGen: ref.gen + 1,
-          segments: [...this.#state.segments, ref],
-        };
-        const { ids: idsT, tail } = this.#t;
-        await inTransaction(this.#db, async (tx) => {
-          await this.#store.write(tx, ref.gen, built);
-          await tx.query(
-            `UPDATE ${idsT} SET gen = ? WHERE gen = 0
+      await this.#exclusive(() =>
+        this.#swapSegments(async () => {
+          const ref = this.#refOf(built, n);
+          const next: State = {
+            ...this.#state,
+            nextGen: ref.gen + 1,
+            segments: [...this.#state.segments, ref],
+          };
+          const { ids: idsT, tail } = this.#t;
+          await inTransaction(this.#db, async (tx) => {
+            await this.#store.write(tx, ref.gen, built);
+            await tx.query(
+              `UPDATE ${idsT} SET gen = ? WHERE gen = 0
              AND id IN (SELECT id FROM ${tail} WHERE seq <= ?)`,
-            [ref.gen, snapshot.maxSeq],
-          );
-          await tx.query(`DELETE FROM ${tail} WHERE seq <= ?`, [snapshot.maxSeq]);
-          await this.#saveState(tx, next);
-        });
-        this.#state = next;
-        for (const [id, e] of this.#tail) if (e.seq <= snapshot.maxSeq) this.#tail.delete(id);
-        this.#segments = [...this.#segments, this.#segmentOf(ref, built)];
-      });
+              [ref.gen, snapshot.maxSeq],
+            );
+            await tx.query(`DELETE FROM ${tail} WHERE seq <= ?`, [snapshot.maxSeq]);
+            await this.#saveState(tx, next);
+          });
+          this.#state = next;
+          for (const [id, e] of this.#tail) if (e.seq <= snapshot.maxSeq) this.#tail.delete(id);
+          this.#segments = [...this.#segments, this.#segmentOf(ref, built)];
+        }),
+      );
       return n;
     });
   }
@@ -419,31 +420,33 @@ export class VectorIndex {
       });
       const built = n > 0 ? this.#build(Float64Array.from(idList), vectors) : null;
 
-      await this.#exclusive(async () => {
-        const ref = built ? this.#refOf(built, n) : null;
-        const kept = this.#state.segments.filter((s) => !oldGens.includes(s.gen));
-        const next: State = {
-          ...this.#state,
-          nextGen: ref ? ref.gen + 1 : this.#state.nextGen,
-          segments: ref ? [...kept, ref] : kept,
-        };
-        await inTransaction(this.#db, async (tx) => {
-          if (ref && built) {
-            await this.#store.write(tx, ref.gen, built);
-            await tx.query(
-              `UPDATE ${this.#t.ids} SET gen = ? WHERE gen IN (SELECT value FROM json_each(?))`,
-              [ref.gen, JSON.stringify(oldGens)],
-            );
-          }
-          await this.#saveState(tx, next);
-        });
-        this.#state = next;
-        this.#segments = [
-          ...this.#segments.filter((s) => !oldGens.includes(s.gen)),
-          ...(ref && built ? [this.#segmentOf(ref, built)] : []),
-        ];
-        this.#retired.push(...old);
-      });
+      await this.#exclusive(() =>
+        this.#swapSegments(async () => {
+          const ref = built ? this.#refOf(built, n) : null;
+          const kept = this.#state.segments.filter((s) => !oldGens.includes(s.gen));
+          const next: State = {
+            ...this.#state,
+            nextGen: ref ? ref.gen + 1 : this.#state.nextGen,
+            segments: ref ? [...kept, ref] : kept,
+          };
+          await inTransaction(this.#db, async (tx) => {
+            if (ref && built) {
+              await this.#store.write(tx, ref.gen, built);
+              await tx.query(
+                `UPDATE ${this.#t.ids} SET gen = ? WHERE gen IN (SELECT value FROM json_each(?))`,
+                [ref.gen, JSON.stringify(oldGens)],
+              );
+            }
+            await this.#saveState(tx, next);
+          });
+          this.#state = next;
+          this.#segments = [
+            ...this.#segments.filter((s) => !oldGens.includes(s.gen)),
+            ...(ref && built ? [this.#segmentOf(ref, built)] : []),
+          ];
+          this.#retired.push(...old);
+        }),
+      );
       await this.#reap();
       return n;
     });
@@ -504,6 +507,36 @@ export class VectorIndex {
     for (const s of ready) this.#refs.delete(s);
     const gens = ready.map((s) => s.gen);
     await inTransaction(this.#db, (tx) => this.#store.drop(tx, gens));
+  }
+
+  /**
+   * Runs `read` over a snapshot of the segments, held against reaping. A read
+   * whose liveness lookup straddles a compact or merge commit may not match its
+   * snapshot, so it runs again on the new one; the third attempt stands.
+   */
+  async #read<T>(read: (segments: SegmentIndex[]) => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      const epoch = this.#epoch;
+      const segments = this.#segments;
+      for (const s of segments) this.#refs.set(s, (this.#refs.get(s) ?? 0) + 1);
+      try {
+        const result = await read(segments);
+        if (attempt === 3 || (epoch % 2 === 0 && epoch === this.#epoch)) return result;
+      } finally {
+        for (const s of segments) this.#refs.set(s, (this.#refs.get(s) ?? 1) - 1);
+        void this.#reap().catch(() => {}); // a failed reap leaves rows that init() sweeps
+      }
+    }
+  }
+
+  /** Commits a segment-list change; readers that overlap it retry (see `#read`). */
+  async #swapSegments(fn: () => Promise<void>): Promise<void> {
+    this.#epoch++;
+    try {
+      await fn();
+    } finally {
+      this.#epoch++;
+    }
   }
 
   #exclusive<T>(fn: () => Promise<T>): Promise<T> {

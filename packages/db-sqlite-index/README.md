@@ -202,6 +202,8 @@ with `ngram: index "<prefix>" was created with store "fts5", opened with "postin
   `ngram: pattern is N characters, the limit is 1000`. A regex with catastrophic
   backtracking still runs to completion; the cap does not prevent that.
 - An invalid regex fails with the engine's `SyntaxError`.
+- A lone surrogate in an upserted text is stored, indexed and returned as U+FFFD
+  (`text.toWellFormed()`), so offsets and `getTexts` refer to that replaced text.
 - Methods other than `init` fail with SQLite's `no such table` until `init` ran.
 - On Durable Objects a single text above about 1.5 MB fails with
   `string or blob too big`; batches are split automatically, single texts are not.

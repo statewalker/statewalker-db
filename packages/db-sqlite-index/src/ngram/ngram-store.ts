@@ -75,7 +75,11 @@ export class NgramStore {
 
   async upsert(items: NgramItem[]): Promise<void> {
     // The last text per id wins; a repeated id would leave stale grams behind.
-    const latest = [...new Map(items.map((item) => [item.id, item])).values()];
+    // A lone surrogate would be stored differently from how it was indexed, so a
+    // later delete could not replay it: texts are made well-formed first.
+    const latest = [
+      ...new Map(items.map(({ id, text }) => [id, { id, text: text.toWellFormed() }])).values(),
+    ];
     if (latest.length === 0) return;
     await inTransaction(this.#db, async (tx) => {
       await this.#backend.remove(

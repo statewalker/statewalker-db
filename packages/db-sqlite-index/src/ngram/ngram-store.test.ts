@@ -167,6 +167,14 @@ for (const [driverName, newDb] of DRIVERS) {
         expect(await indexed("version")).toBe(false);
       });
 
+      it("a lone surrogate is stored as U+FFFD, and delete leaves no grams", async () => {
+        await index.upsert([{ id: 1, text: "x\uD800y z" }]);
+        expect(await index.getTexts([1])).toEqual(new Map([[1, "x\uFFFDy z"]]));
+        expect(await indexed("x\uFFFDy")).toBe(true);
+        await index.delete([1]);
+        expect(await indexed("x\uFFFDy")).toBe(false);
+      });
+
       it("delete removes items from index and scan", async () => {
         await index.upsert(items(["one two", "two three"]));
         await index.delete([1]);

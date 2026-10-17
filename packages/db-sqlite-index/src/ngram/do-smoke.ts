@@ -5,6 +5,10 @@ const check = (ok: boolean, message: string) => {
   if (!ok) throw new Error(`ngram smoke: ${message}`);
 };
 
+/** True when the index itself still offers candidates (candidateBudget 0 skips the verifier). */
+const indexed = async (index: NgramStore, pattern: string) =>
+  (await index.search(pattern, { candidateBudget: 0 })).truncated;
+
 const ids = (result: { hits: { id: number }[] }) => result.hits.map((h) => h.id).join();
 
 /** Run inside a real Durable Object by db-sqlite-do's `pnpm test:do`. */
@@ -25,10 +29,13 @@ export const ngramDoScenarios = (["fts5", "postings"] as const).map((store) => (
     );
     check(ids(await index.search("Hello")) === "1", "case-sensitive hits");
     check(ids(await index.search("surrogate")) === "3", "text with a lone surrogate is indexed");
+    check((await index.getTexts([3])).get(3) === "lone \ufffd surrogate", "text made well-formed");
+    check(await indexed(index, "World"), "index lacks the grams of 'World'");
+    check(await indexed(index, "surrogate"), "index lacks the grams of 'surrogate'");
     await index.upsert([{ id: 1, text: "goodbye" }]); // replays the old text to remove its grams
-    check(ids(await index.search("World")) === "", "stale grams after overwrite");
+    check(!(await indexed(index, "World")), "stale grams after overwrite");
     await index.upsert([{ id: 3, text: "lone \ud800 changed" }]);
-    check(ids(await index.search("surrogate")) === "", "stale grams after surrogate overwrite");
+    check(!(await indexed(index, "surrogate")), "stale grams after surrogate overwrite");
     await index.drop(); // DROP of the tables inside a transaction
     const [row] = await db.query<{ n: number }>(
       "SELECT count(*) AS n FROM sqlite_master WHERE name LIKE ?",

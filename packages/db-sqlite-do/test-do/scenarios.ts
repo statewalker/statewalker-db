@@ -1,4 +1,5 @@
 import { sqliteTransactionScenarios } from "@statewalker/db-tests/sqlite-transaction-scenarios";
+import { ngramDoScenarios } from "../../db-sqlite-index/src/ngram/do-smoke.js";
 import { vectorDoScenarios } from "../../db-sqlite-index/src/vector/do-smoke.js";
 import { DO_UNSUPPORTED_SCENARIOS } from "./unsupported-scenarios.js";
 
@@ -10,4 +11,5 @@ import { DO_UNSUPPORTED_SCENARIOS } from "./unsupported-scenarios.js";
 export const SCENARIOS = [
   ...sqliteTransactionScenarios.filter((s) => !DO_UNSUPPORTED_SCENARIOS.includes(s.name)),
   ...vectorDoScenarios,
+  ...ngramDoScenarios,
 ];

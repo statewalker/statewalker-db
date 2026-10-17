@@ -26,6 +26,22 @@ describe("fold", () => {
     expect(broken).toEqual([]);
   });
 
+  it("keeps the UTF-16 length of every code point, so offsets stay valid", () => {
+    const changed: string[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const c = String.fromCodePoint(cp);
+      if (fold(c).length !== c.length) changed.push(`U+${cp.toString(16)}`);
+    }
+    expect(changed).toEqual([]);
+  });
+
+  it("keeps the length of a text with U+0130 and an astral character", () => {
+    const folded = fold("İ😀A");
+    expect(folded.length).toBe("İ😀A".length);
+    expect(folded.endsWith("a")).toBe(true);
+  });
+
   it("is a homomorphism over concatenation, so substrings stay substrings", () => {
     const a = "ΟΔΟΣ ſtraße";
     const b = "İK";

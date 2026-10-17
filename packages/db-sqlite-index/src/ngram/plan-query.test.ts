@@ -111,6 +111,13 @@ describe("planQuery (regex)", () => {
     expect(planQuery("abc", { caseSensitive: false }).regex.flags).toBe("gi");
   });
 
+  it("rejects \\p{…} and \\P{…} in regex mode, but not an escaped backslash before p{", () => {
+    expect(() => planQuery("abc\\p{Lu}", { regex: true })).toThrow(/not supported in regex mode/);
+    expect(() => planQuery("[\\P{L}]abc", { regex: true })).toThrow(SyntaxError);
+    expect(() => planQuery("abc\\\\p{2}", { regex: true })).not.toThrow();
+    expect(() => planQuery("abc\\p{Lu}", {})).not.toThrow();
+  });
+
   it("rejects an invalid regex with the engine's SyntaxError", () => {
     expect(() => planQuery("(abc", { regex: true })).toThrow(SyntaxError);
   });

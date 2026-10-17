@@ -64,10 +64,24 @@ await dropVectorIndex(db, "vec_");
 const [{ n }] = await db.query<{ n: number }>(`SELECT count(*) AS n FROM ${index.idTable}`);
 ```
 
-Every write method runs its own `inTransaction`. Never call one from inside an
+Every write method runs its own `inTransaction`. Never call any engine method
+(`upsert`, `delete`, `compact`, `merge`, `search`, `getVectors`, `getTexts`) from inside an
 `inTransaction(db, …)` callback: the index holds the outer `Db`, so on Node.js
 and in the browser the inner call waits for the outer transaction to finish,
 which never happens — the callback hangs with no error.
+
+Each engine needs its own prefix: both create `{p}meta`, with different columns, so a
+vector index and an n-gram index sharing a prefix break each other.
+
+How much one call commits:
+
+- `upsert()` commits every 200 items and `delete()` every 2,000 ids, each batch as its own
+  transaction. A failure part-way leaves the earlier batches committed.
+- `compact()` and `merge()` are one transaction each.
+- An `upsert()` that reaches `autoCompactAt` runs `compact()` after its batch has committed. If
+  that compaction fails, `upsert()` rejects although the items are stored. While an
+  auto-compact runs, an explicit `compact()` or `merge()` can reject with an "already running"
+  error: call it again afterwards.
 
 ## Internals
 
@@ -169,6 +183,12 @@ await grams.search("idx_(left|right)", { regex: true, caseSensitive: false, limi
 Ids are integers chosen by the caller. Hits come in ascending id order with every
 non-empty match; offsets are UTF-16 code units of the stored text.
 
+`upsert` and `delete` are each one transaction, however many items they get: atomic, but
+unbounded against a Durable Object's 15 s operation deadline, so keep batches small. As in
+the vector section, never call `upsert`, `delete`, `search`, `getTexts` or `drop` from inside an
+`inTransaction(db, …)` callback on the same `Db`: the call hangs. Use a prefix of its own,
+different from any vector index on the same database.
+
 ## How a search stays exact
 
 1. `planQuery` turns the pattern into a regex and a list of branches, each a set of
@@ -202,6 +222,14 @@ with `ngram: index "<prefix>" was created with store "fts5", opened with "postin
   `ngram: pattern is N characters, the limit is 1000`. A regex with catastrophic
   backtracking still runs to completion; the cap does not prevent that.
 - An invalid regex fails with the engine's `SyntaxError`.
+- **Regex mode compiles without the `u` flag**, because the case folding used for the index
+  is unsound under `/iu` (U+0390 and U+1FD3 are equal under `/iu`, but `fold` separates them,
+  so candidates would be missed). So `.` matches one UTF-16 code unit and can split a surrogate
+  pair (`😀` yields two matches of `.`, and a hit can end inside an emoji), and `\u{1F600}` is
+  not a code-point escape. `\p{…}` and `\P{…}` would silently mean the literal text, so they
+  are rejected with `ngram: \p{…} and \P{…} are not supported in regex mode (patterns compile
+  without the u flag)`. Literal mode is not affected.
+- `search` with `limit: 0` returns no hits and `truncated: true`.
 - A lone surrogate in an upserted text is stored, indexed and returned as U+FFFD
   (`text.toWellFormed()`), so offsets and `getTexts` refer to that replaced text.
 - Methods other than `init` fail with SQLite's `no such table` until `init` ran.

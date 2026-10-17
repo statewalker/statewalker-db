@@ -52,6 +52,9 @@
     "typescript": "catalog:",
     "vitest": "catalog:"
   },
+  "engines": {
+    "node": ">=22.13"
+  },
   "sideEffects": false,
   "publishConfig": {
     "access": "public"

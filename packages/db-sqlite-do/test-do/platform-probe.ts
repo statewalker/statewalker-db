@@ -14,6 +14,8 @@ export const PROBE_EXPECTATIONS: Record<string, "ok" | RegExp> = {
   blob1900k: "ok",
   blob2500k: /too big/,
   blobReadsAsArrayBuffer: "ok",
+  string1900k: "ok",
+  string2500k: /too big/,
 };
 
 /** Run each probe against fresh tables of `storage`; each result is "ok" or "error: <message>". */
@@ -35,6 +37,7 @@ export function probeDoSqlite(storage: DoSqlStorage): Record<string, string> {
   const params = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
   run("CREATE TABLE probe_b (k INTEGER PRIMARY KEY, d BLOB)");
+  run("CREATE TABLE probe_s (k INTEGER PRIMARY KEY, d TEXT)");
   probe("begin", () => run("BEGIN"));
   probe("savepoint", () => run("SAVEPOINT s"));
   probe("pragma", () => run("PRAGMA compile_options"));
@@ -75,6 +78,8 @@ export function probeDoSqlite(storage: DoSqlStorage): Record<string, string> {
   );
   probe("blob1900k", () => run("INSERT INTO probe_b VALUES (1, ?)", new ArrayBuffer(1_900_000)));
   probe("blob2500k", () => run("INSERT INTO probe_b VALUES (2, ?)", new ArrayBuffer(2_500_000)));
+  probe("string1900k", () => run("INSERT INTO probe_s VALUES (1, ?)", "a".repeat(1_900_000)));
+  probe("string2500k", () => run("INSERT INTO probe_s VALUES (2, ?)", "a".repeat(2_500_000)));
   probe("blobReadsAsArrayBuffer", () => {
     const value = run("SELECT d FROM probe_b WHERE k = 1")[0]?.d;
     if (!(value instanceof ArrayBuffer)) {

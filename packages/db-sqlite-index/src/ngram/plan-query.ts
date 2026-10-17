@@ -23,6 +23,13 @@ export function planQuery(
       `ngram: pattern is ${pattern.length} characters, the limit is ${MAX_PATTERN_LENGTH}`,
     );
   }
+  // The regex has no `u` flag (case folding is unsound under /iu), so `\p{…}` would silently
+  // match the literal text "p{…}". An odd run of backslashes before `p` is a real escape.
+  if (opts.regex && /(?<!\\)(?:\\\\)*\\[pP]\{/.test(pattern)) {
+    throw new SyntaxError(
+      "ngram: \\p{…} and \\P{…} are not supported in regex mode (patterns compile without the u flag)",
+    );
+  }
   const source = opts.regex ? pattern : pattern.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   const regex = new RegExp(source, opts.caseSensitive === false ? "gi" : "g");
   const branches: string[][] = [];

@@ -121,6 +121,7 @@ export class NgramStore {
       caseSensitive: opts.caseSensitive ?? true,
     });
     signal?.throwIfAborted();
+    if (limit <= 0) return { hits: [], truncated: true };
     const found =
       plan.branches === null
         ? (

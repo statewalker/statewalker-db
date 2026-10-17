@@ -183,13 +183,13 @@ for (const [driverName, newDb] of DRIVERS) {
         expect((await index.search("o", {})).hits.map((h) => h.id)).toEqual([2]);
       });
 
-      it("upserts a batch larger than one JSON parameter", async () => {
-        const big = Array.from({ length: 3000 }, (_, i) => ({
+      it("upserts a batch larger than the 2 MB a DO accepts in one bound value", async () => {
+        const big = Array.from({ length: 6000 }, (_, i) => ({
           id: i + 1,
           text: `${"lorem ipsum ".repeat(33)}marker${String(i).padStart(5, "0")}`,
         }));
         await index.upsert(big);
-        expect((await index.search("marker02999")).hits.map((h) => h.id)).toEqual([3000]);
+        expect((await index.search("marker05999")).hits.map((h) => h.id)).toEqual([6000]);
       });
 
       it("a second store on the same db and prefix sees persisted data", async () => {
@@ -197,6 +197,11 @@ for (const [driverName, newDb] of DRIVERS) {
         const reopened = new NgramStore({ db, prefix: "t_", store });
         await reopened.init();
         expect((await reopened.search("persisted")).hits.map((h) => h.id)).toEqual([1]);
+      });
+
+      it("limit 0 returns no hits", async () => {
+        await index.upsert(items(["one two", "two three"]));
+        expect((await index.search("two", { limit: 0 })).hits).toEqual([]);
       });
 
       it("limit stops early and reports truncation", async () => {

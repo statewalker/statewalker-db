@@ -5,13 +5,13 @@ export type FakeDoStorage = DoSqlStorage & { close(): void };
 
 /** Limits probed on celld's DO SQLite (see test-do/platform-probe.ts). */
 const MAX_BOUND_PARAMETERS = 100;
-const MAX_BLOB_BYTES = 2_000_000;
+const MAX_VALUE_BYTES = 2_000_000;
 const NOT_AUTHORIZED = /^\s*(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|PRAGMA)\b/i;
 
 /**
  * An in-memory stand-in for a Durable Object's `ctx.storage` on Node.js's `node:sqlite`, with the
  * DO limits: no SQL-level transactions or PRAGMA, at most 100 bound parameters, BLOBs bound and
- * read as ArrayBuffer and at most ~2 MB. `transaction` runs the closure between BEGIN and
+ * read as ArrayBuffer, and bound strings (UTF-8 bytes) and BLOBs at most ~2 MB. `transaction` runs the closure between BEGIN and
  * COMMIT/ROLLBACK and, like the platform, does not queue concurrent calls.
  */
 export function newFakeDoStorage(): FakeDoStorage {
@@ -20,10 +20,10 @@ export function newFakeDoStorage(): FakeDoStorage {
     if (ArrayBuffer.isView(value)) {
       throw new TypeError("fake DO storage: bind a BLOB as an ArrayBuffer, not a typed array");
     }
+    const tooBig = () => new Error("SQL error: bind sync KV cursor: string or blob too big");
+    if (typeof value === "string" && Buffer.byteLength(value) > MAX_VALUE_BYTES) throw tooBig();
     if (value instanceof ArrayBuffer) {
-      if (value.byteLength > MAX_BLOB_BYTES) {
-        throw new Error("SQL error: bind sync KV cursor: string or blob too big");
-      }
+      if (value.byteLength > MAX_VALUE_BYTES) throw tooBig();
       return new Uint8Array(value);
     }
     return value as SQLInputValue;

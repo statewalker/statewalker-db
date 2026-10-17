@@ -75,7 +75,7 @@ started. It is not part of `pnpm test`: run it before a release.
   again, so it must be idempotent and do no external I/O.
 - **Limits of DO SQLite, and what they look like:** more than 100 bound parameters rejects with
   `too many SQL variables` (pass id lists as one JSON string to `json_each(?)`); a BLOB or string
-  over about 2 MB rejects with `string or blob too big`; `BEGIN`, `SAVEPOINT` and `PRAGMA` reject
+  over about 2 MB rejects with `string or blob too big` (the fake measures a string in UTF-8 bytes); `BEGIN`, `SAVEPOINT` and `PRAGMA` reject
   with `not authorized`.
 - **`ON CONFLICT ROLLBACK` and `RAISE(ROLLBACK)` fail the whole DO call.** Inside `inTransaction`
   on a Durable Object, a statement that makes SQLite itself end the transaction rolls the data

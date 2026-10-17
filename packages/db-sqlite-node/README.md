@@ -49,7 +49,8 @@ await db.close();
 - **`query` runs one statement.** Anything after the first `;` is ignored without an error;
   use `exec` for multi-statement scripts.
 - **Rows are plain objects with a `null` prototype**, BLOBs are `Uint8Array`, integers are
-  JavaScript numbers: values above 2^53 lose precision.
+  JavaScript numbers: reading an integer above 2^53 rejects the whole query with `Value is too
+  large to be represented as a JavaScript number: 9007199254740993`.
 - **Errors are `node:sqlite`'s.** A path in a missing directory rejects with
   `unable to open database file`; bad SQL rejects with `near "...": syntax error`; a call after
   `close()` rejects with `db-sqlite: the database is closed`.

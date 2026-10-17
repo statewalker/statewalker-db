@@ -94,6 +94,28 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
     },
   },
   {
+    name: "the callback's error survives a rollback SQLite already performed",
+    async run(db) {
+      await db.exec("CREATE TABLE u (k TEXT UNIQUE ON CONFLICT ROLLBACK)");
+      await db.exec("INSERT INTO u VALUES ('a')");
+      let caught: unknown;
+      try {
+        await inTransaction(db, async (tx) => {
+          await tx.query("INSERT INTO u VALUES ('b')");
+          await tx.query("INSERT INTO u VALUES ('a')");
+        });
+      } catch (error) {
+        caught = error;
+      }
+      check(
+        /unique|constraint/i.test(errorText(caught)),
+        `constraint error reached the caller: ${errorText(caught)}`,
+      );
+      const rows = await db.query<{ n: number }>("SELECT count(*) AS n FROM u");
+      check(Number(rows[0]?.n) === 1, "the db is usable and the transaction is rolled back");
+    },
+  },
+  {
     name: "nested inTransaction on the transaction handle rejects",
     async run(db) {
       await setup(db);

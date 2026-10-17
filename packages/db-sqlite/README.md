@@ -56,6 +56,9 @@ const id = await inTransaction(db, async (tx) => {
   transaction.
 - **The `tx` handle expires.** After the callback settles, `tx.query` rejects with
   `db-sqlite: the transaction is finished; use the outer Db`; `tx.close` always rejects.
+- **Inside `cb`, use only `tx`.** Calling the outer `db` (`db.query`, or `inTransaction(db, ...)`)
+  from inside `cb` queues behind the very transaction it belongs to, so the call never resolves
+  and no error is raised. Nothing detects this at runtime.
 - **Callback rules.** No external I/O inside `cb` (the queue is held for its whole duration), and
   `cb` must be idempotent: Durable Objects may run it again.
 - **Row counts.** There is no "rows changed" result: use `SELECT changes()` or `RETURNING` inside

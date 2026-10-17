@@ -42,7 +42,11 @@ export function newSerialisedSqliteDb(engine: SqliteEngine): Db {
         engine.exec("COMMIT");
         return result;
       } catch (error) {
-        engine.exec("ROLLBACK");
+        try {
+          engine.exec("ROLLBACK");
+        } catch {
+          // SQLite already ended the transaction itself (ON CONFLICT ROLLBACK, auto-rollback)
+        }
         throw error;
       }
     });

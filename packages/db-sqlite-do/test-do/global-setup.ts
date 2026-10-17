@@ -36,7 +36,7 @@ export default async function setup(project: TestProject) {
     stdio: ["ignore", "pipe", "pipe"],
   });
   let log = "";
-  const baseUrl = await new Promise<string>((resolve, reject) => {
+  const ready = new Promise<string>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`celld dev was not ready within 60 s:\n${log}`)),
       60_000,
@@ -44,10 +44,10 @@ export default async function setup(project: TestProject) {
     const onData = (chunk: Buffer) => {
       log += chunk.toString();
       // biome-ignore lint/suspicious/noControlCharactersInRegex: the URL ends at an ANSI colour escape
-      const ready = /ready\s+(http:\/\/[^\s\u001b]+)/.exec(log);
-      if (ready?.[1]) {
+      const url = /ready\s+(http:\/\/[^\s\u001b]+)/.exec(log)?.[1];
+      if (url) {
         clearTimeout(timer);
-        resolve(ready[1]);
+        resolve(url);
       }
     };
     child.stdout.on("data", onData);
@@ -57,6 +57,16 @@ export default async function setup(project: TestProject) {
       reject(new Error(`celld dev exited (${code}) before it was ready:\n${log}`));
     });
   });
+  let baseUrl: string;
+  try {
+    baseUrl = await ready;
+  } catch (error) {
+    // Setup throws before returning the teardown: stop the child here or it is orphaned.
+    child.stdout.removeAllListeners("data");
+    child.stderr.removeAllListeners("data");
+    child.kill("SIGTERM");
+    throw error;
+  }
   project.provide("doBaseUrl", baseUrl);
   return () => {
     child.kill("SIGTERM");

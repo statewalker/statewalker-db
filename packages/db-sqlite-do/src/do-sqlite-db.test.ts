@@ -2,7 +2,7 @@ import { inTransaction } from "@statewalker/db-sqlite";
 import { runDbConformance, runSqliteTransactionConformance } from "@statewalker/db-tests";
 import { describe, expect, it } from "vitest";
 import { PROBE_EXPECTATIONS, probeDoSqlite } from "../test-do/platform-probe.js";
-import { DO_UNSUPPORTED_SCENARIOS } from "../test-do/scenarios.js";
+import { DO_UNSUPPORTED_SCENARIOS } from "../test-do/unsupported-scenarios.js";
 import { newDoSqliteDb } from "./do-sqlite-db.js";
 import { newFakeDoStorage } from "./fake-do-storage.js";
 

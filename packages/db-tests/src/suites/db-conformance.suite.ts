@@ -12,10 +12,9 @@
  * The two axes that differ between dialects are parameters, not forks in the
  * suite:
  *  - **placeholder** — `?` (sqlite) vs `$1` (duckdb).
- *  - **normalizeRow** — projects a raw driver row to a plain object so one
- *    matcher serves both duckdb (already-plain rows) and libsql (whose Row
- *    objects also expose non-enumerable positional keys + `length`). Adapters
- *    pass `(row) => ({ ...row })`; the copy keeps only the named columns.
+ *  - **normalizeRow** — projects a raw driver row to a plain object. Some
+ *    drivers return rows with a `null` prototype or extra non-enumerable keys;
+ *    `(row) => ({ ...row })` keeps only the named columns.
  */
 
 import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
@@ -29,7 +28,7 @@ export interface RunDbConformanceOptions {
   placeholder: string;
   /**
    * Optional per-row normalizer applied before matching. Use it to strip
-   * driver-specific row cruft (e.g. libsql's positional keys) so a plain
+   * driver-specific row cruft (e.g. a `null` prototype or extra non-enumerable keys) so a plain
    * `toEqual` works. Defaults to identity.
    */
   normalizeRow?: (row: DbEntry) => DbEntry;

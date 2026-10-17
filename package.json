@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.16.1",
-  "description": "Database adapters: DuckDB and SQLite (libSQL) for browser and Node.",
+  "description": "Database adapters: DuckDB, SQLite (Node.js, browser WASM, Durable Objects) and PGlite behind one Db interface.",
   "bugs": {
     "url": "https://github.com/statewalker/statewalker-db/issues"
   },

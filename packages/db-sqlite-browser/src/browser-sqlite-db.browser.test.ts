@@ -1,30 +1,21 @@
 import type { Db } from "@statewalker/db-api";
-import { runDbConformance } from "@statewalker/db-tests";
+import { runDbConformance, runSqliteTransactionConformance } from "@statewalker/db-tests";
 import { afterEach, describe, expect, it } from "vitest";
 import { newBrowserSqliteDb } from "./browser-sqlite-db.js";
 
 /**
- * The libSQL-WASM browser adapter, exercised in a REAL browser (Vitest browser
+ * The sqlite-wasm adapter, exercised in a REAL browser (Vitest browser
  * mode + Playwright/Chromium). Launched only by `vitest.browser.config.ts` (the
  * `test:browser` script) — the Node config excludes `*.browser.test.ts`.
  *
- * The engine is served from `/sqlite3.wasm` by the config's `publicDir`, so the
- * adapter's default `wasmUrl` resolves. Everything runs in-memory; the node-only
- * file-persistence scenario is skipped via `skipFilePersistence`.
+ * Everything runs in-memory except the OPFS tests, which use Dedicated Workers;
+ * the node-only file-persistence scenario is skipped via `skipFilePersistence`.
  */
 
-// Shared contract: CRUD, parameter binding, injection safety, cardinality,
-// close, error paths. File persistence is node-only, hence skipped here.
-runDbConformance(() => newBrowserSqliteDb(), {
-  // libsql dialect: `?` placeholder; the spread normalizer drops libsql Row's
-  // non-enumerable positional keys so a plain `toEqual` matches.
-  placeholder: "?",
-  normalizeRow: (row) => ({ ...row }),
-  skipFilePersistence: true,
-});
+runDbConformance(() => newBrowserSqliteDb(), { placeholder: "?", skipFilePersistence: true });
+runSqliteTransactionConformance(() => newBrowserSqliteDb());
 
-// Dialect-specific browser behavior the shared suite does not cover: libSQL's
-// FTS5 full-text search and native vector index.
+// Dialect-specific browser behavior the shared suite does not cover: FTS5 full-text search.
 describe("newBrowserSqliteDb", () => {
   let db: Db;
 
@@ -35,6 +26,14 @@ describe("newBrowserSqliteDb", () => {
   });
 
   describe("FTS5", () => {
+    it("has the trigram tokenizer (substring search)", async () => {
+      db = await newBrowserSqliteDb();
+      await db.exec("CREATE VIRTUAL TABLE g USING fts5(c, tokenize='trigram')");
+      await db.exec("INSERT INTO g VALUES ('idx_lefthand')");
+      const rows = await db.query<{ c: string }>("SELECT c FROM g WHERE g MATCH 'x_le'");
+      expect(rows.map((r) => r.c)).toEqual(["idx_lefthand"]);
+    });
+
     it("returns empty results for unmatched search terms", async () => {
       db = await newBrowserSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE docs2_fts USING fts5(content)");
@@ -93,67 +92,49 @@ describe("newBrowserSqliteDb", () => {
       expect(rowids).toContain(3);
     });
   });
+});
 
-  describe("vector search", () => {
-    it("creates index and performs vector similarity search", async () => {
-      db = await newBrowserSqliteDb();
+type TestWorker = {
+  onmessage: ((event: { data: { count?: number; error?: string } }) => void) | null;
+  onerror: ((event: { message: string }) => void) | null;
+  postMessage(message: unknown): void;
+  terminate(): void;
+};
+const WorkerClass = (
+  globalThis as unknown as {
+    Worker: new (url: URL, options: { type: "module" }) => TestWorker;
+  }
+).Worker;
 
-      await db.exec("CREATE TABLE embeddings (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
-      await db.exec("CREATE INDEX vec_idx ON embeddings (libsql_vector_idx(vec))");
-      await db.exec(`
-        INSERT INTO embeddings VALUES
-          (1, vector32('[1.0, 0.0, 0.0]')),
-          (2, vector32('[0.0, 1.0, 0.0]')),
-          (3, vector32('[0.0, 0.0, 1.0]'))
-      `);
-
-      const rows = await db.query<{ id: number }>(
-        "SELECT e.id FROM vector_top_k('vec_idx', '[1.0, 0.1, 0.0]', 1) AS v JOIN embeddings e ON e.rowid = v.id",
-      );
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.id).toBe(1);
+/** Run one action in a fresh Dedicated Worker, then terminate it (as a page reload would). */
+function inWorker(message: { path: string; action: "write" | "count" }): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const worker = new WorkerClass(new URL("../test/opfs-test-worker.ts", import.meta.url), {
+      type: "module",
     });
+    worker.onmessage = ({ data }) => {
+      worker.terminate();
+      if (data.error) reject(new Error(data.error));
+      else resolve(Number(data.count));
+    };
+    worker.onerror = (event) => {
+      worker.terminate();
+      reject(new Error(event.message));
+    };
+    worker.postMessage(message);
+  });
+}
 
-    it("returns k nearest neighbors ordered by distance", async () => {
-      db = await newBrowserSqliteDb();
+describe("OPFS persistence (opfs-sahpool)", () => {
+  it("rejects a persistent path on the main thread", async () => {
+    await expect(newBrowserSqliteDb({ path: "/main-thread.db" })).rejects.toThrow(
+      /Dedicated Worker/,
+    );
+  });
 
-      await db.exec("CREATE TABLE vectors (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
-      await db.exec("CREATE INDEX vec_idx2 ON vectors (libsql_vector_idx(vec))");
-      await db.exec(`
-        INSERT INTO vectors VALUES
-          (1, vector32('[1.0, 0.0, 0.0]')),
-          (2, vector32('[0.9, 0.1, 0.0]')),
-          (3, vector32('[0.0, 1.0, 0.0]')),
-          (4, vector32('[0.0, 0.0, 1.0]'))
-      `);
-
-      const rows = await db.query<{ id: number }>(
-        "SELECT e.id FROM vector_top_k('vec_idx2', '[1.0, 0.0, 0.0]', 2) AS v JOIN vectors e ON e.rowid = v.id",
-      );
-
-      expect(rows).toHaveLength(2);
-      const ids = rows.map((r) => r.id);
-      expect(ids).toContain(1);
-      expect(ids).toContain(2);
-    });
-
-    it("works without index (brute-force scan)", async () => {
-      db = await newBrowserSqliteDb();
-
-      await db.exec("CREATE TABLE vecs_no_idx (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
-      await db.exec(`
-        INSERT INTO vecs_no_idx VALUES
-          (1, vector32('[1.0, 0.0, 0.0]')),
-          (2, vector32('[0.0, 1.0, 0.0]'))
-      `);
-
-      const rows = await db.query<{ id: number }>(
-        "SELECT id FROM vecs_no_idx ORDER BY vector_distance_cos(vec, vector32('[0.0, 0.9, 0.1]')) LIMIT 1",
-      );
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.id).toBe(2);
-    });
+  it("keeps a path's data from one worker to the next", async () => {
+    const path = `/persist-${Date.now()}.db`;
+    expect(await inWorker({ path, action: "write" })).toBe(1);
+    expect(await inWorker({ path, action: "count" })).toBe(1);
   });
 });

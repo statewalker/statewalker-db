@@ -3,7 +3,7 @@
   "version": "0.1.4",
   "private": false,
   "type": "module",
-  "description": "libSQL/SQLite WASM driver for @statewalker/db-api, targeting browser environments.",
+  "description": "SQLite WASM (@sqlite.org/sqlite-wasm) driver for @statewalker/db-api in the browser: in-memory anywhere, OPFS persistence in a Dedicated Worker.",
   "bugs": {
     "url": "https://github.com/statewalker/statewalker-db/issues"
   },
@@ -42,11 +42,13 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@libsql/libsql-wasm-experimental": "catalog:",
+    "@sqlite.org/sqlite-wasm": "catalog:",
+    "@statewalker/db-sqlite": "workspace:^",
     "@statewalker/db-api": "workspace:^"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
     "@statewalker/db-tests": "workspace:^",
     "@vitest/browser": "catalog:",
     "@vitest/browser-playwright": "catalog:",

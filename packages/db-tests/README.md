@@ -83,17 +83,15 @@ The suite has 10 scenarios:
 9. Data written to a file survives close and reopen (Node.js only).
 10. Invalid SQL rejects.
 
-- **Why `normalizeRow`.** libSQL rows carry non-enumerable positional keys and
-  `length`, so `toEqual` against a plain object fails. `(row) => ({ ...row })`
-  keeps only the named columns and works for every driver.
+- **Why `normalizeRow`.** Some drivers return rows with a `null` prototype or
+  extra non-enumerable keys; `(row) => ({ ...row })` keeps only the named columns.
 - **Why the Node.js built-ins are imported through a variable.** The
   file-persistence scenario loads `node:fs/promises`, `node:os` and `node:path`
   with `import(specifier)` from a string variable, typed by a local shim. Vite
   cannot analyze a variable specifier, so a browser bundle never resolves them,
   and a browser typecheck needs no `@types/node`.
 - **Engine-specific tests stay with each driver.** FTS and vector search use
-  different SQL per engine (libSQL `fts5`, `libsql_vector_idx`; DuckDB `fts`
-  and `vss` extensions), so they are not part of this suite.
+  different SQL per engine (SQLite FTS5; DuckDB `fts` and `vss`), so they are not part of this suite.
 - **The transaction scenarios are vitest-free on purpose.** They throw `scenario check failed: ...` on the first failed check. The `db-sqlite-do` `test:do` harness runs them inside a Durable Object, where Vitest cannot run.
 - **Dependencies:** `@statewalker/db-api` (the `Db` type); `@statewalker/db-sqlite` (`inTransaction`, used by the transaction scenarios); peer `vitest`.
 

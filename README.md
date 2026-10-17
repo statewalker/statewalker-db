@@ -3,8 +3,8 @@
 ## What it is
 
 A pnpm workspace with one database interface and four drivers for it. Code
-written against the `Db` type from `@statewalker/db-api` runs on DuckDB or on
-SQLite (libSQL), in the browser or in Node.js, depending on which driver
+written against the `Db` type from `@statewalker/db-api` runs on DuckDB, on SQLite
+(Node.js, browser WASM or a Durable Object) or on PGlite, depending on which driver
 creates the instance. A shared conformance suite checks that all four drivers
 behave the same. The workspace depends on no other `@statewalker` package.
 
@@ -16,8 +16,7 @@ behave the same. The workspace depends on no other `@statewalker` package.
      +-------------------+------+-------------+--------------------+
      |                   |                    |                    |
  db-duckdb-browser   db-duckdb-node     db-sqlite-browser     db-sqlite-node
- @duckdb/duckdb-wasm @duckdb/node-api   @libsql/libsql-wasm-  @libsql/client
-                                        experimental
+ @duckdb/duckdb-wasm @duckdb/node-api   @sqlite.org/sqlite-wasm node:sqlite
      |                   |                    |                    |
      +-------------------+------+-------------+--------------------+
                                 |
@@ -29,8 +28,10 @@ behave the same. The workspace depends on no other `@statewalker` package.
 | `packages/db-api` | `@statewalker/db-api`: the `Db` interface | npm |
 | `packages/db-duckdb-browser` | `@statewalker/db-duckdb-browser`: DuckDB WASM in a Web Worker, optional OPFS persistence | npm |
 | `packages/db-duckdb-node` | `@statewalker/db-duckdb-node`: DuckDB with native Node.js bindings | npm |
-| `packages/db-sqlite-browser` | `@statewalker/db-sqlite-browser`: libSQL compiled to WASM, with FTS5 and vector search | npm |
-| `packages/db-sqlite-node` | `@statewalker/db-sqlite-node`: libSQL through `@libsql/client` | npm |
+| `packages/db-sqlite-browser` | `@statewalker/db-sqlite-browser`: the official SQLite WASM build; in memory anywhere, OPFS in a Dedicated Worker | npm |
+| `packages/db-sqlite-node` | `@statewalker/db-sqlite-node`: Node.js's built-in `node:sqlite` | npm |
+| `packages/db-sqlite` | `@statewalker/db-sqlite`: `inTransaction` and the queue every SQLite driver uses | npm |
+| `packages/db-sqlite-do` | `@statewalker/db-sqlite-do`: Durable Object SQLite, plus a Node.js fake | npm |
 | `packages/db-tests` | `@statewalker/db-tests`: the shared conformance suite | private |
 | `apps/sqlite-search-demo` | `@statewalker/sqlite-search-demo`: Vite demo of FTS5 and vector search on `@sqlite.org/sqlite-wasm` | private |
 | `tools/consumer-install` | `@statewalker/consumer-install-tests`: packs the public packages and installs them like an npm consumer | private |
@@ -65,11 +66,10 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
   that ask for it. Packages ship `src/` as well.
 - **`prepack` runs the build.** `pnpm pack` and publishing therefore never
   package a stale `dist/`.
-- **One conformance suite, parameterized.** The engines differ in two ways
-  that matter to the tests: the placeholder syntax (the suite uses `?` for
-  libSQL and `$1` for DuckDB), and libSQL rows carrying extra non-enumerable
-  keys. `runDbConformance` takes both as options, so no driver keeps its own
-  copy of the common tests.
+- **One conformance suite, parameterized.** The engines differ in the
+  placeholder syntax (`?` for SQLite, `$1` for DuckDB and PGlite), which
+  `runDbConformance` takes as an option, so no driver keeps its own copy of the
+  common tests. SQLite drivers also run `runSqliteTransactionConformance`.
 - **Browser tests have their own Vitest config.** Each browser driver has a
   `vitest.config.ts` that excludes `*.browser.test.ts`, and a
   `vitest.browser.config.ts` that runs only those files, in Chromium. A plain
@@ -89,11 +89,11 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
   `pnpm exec playwright install chromium`, `pnpm run test:browser` fails when
   it launches the browser, before any test runs.
 - **The DuckDB browser tests need network access.** They load the DuckDB WASM
-  bundle from jsDelivr. The libSQL browser tests serve `sqlite3.wasm` locally
-  (the config's `publicDir`) and work offline.
+  bundle from jsDelivr. The SQLite browser tests load `sqlite3.wasm` from the
+  installed package and work offline.
 - **A browser driver imports fine under Node.js, then fails.**
   `newBrowserDuckDb()` rejects with `Worker is not defined`;
-  `newBrowserSqliteDb()` aborts because it cannot load `/sqlite3.wasm`.
+  `newBrowserSqliteDb()` works in memory under Node.js but rejects a `path` (OPFS needs a Dedicated Worker).
 - **`pnpm run test:do` starts a celld node.** It runs `celld dev` on a free port with `--clean` on `packages/db-sqlite-do/test-do/.celld/dev` and stops it at the end; a version other than 0.6.x stops it before any test.
 
 ## Reference

@@ -1,57 +1,75 @@
-import type { Database, Sqlite3Static } from "@libsql/libsql-wasm-experimental";
-import sqlite3InitModule from "@libsql/libsql-wasm-experimental";
-import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
+import sqlite3InitModule, {
+  type BindableValue,
+  type Database,
+  type SAHPoolUtil,
+  type Sqlite3Static,
+} from "@sqlite.org/sqlite-wasm";
+import type { Db, DbOptions } from "@statewalker/db-api";
+import { newSerialisedSqliteDb } from "@statewalker/db-sqlite";
 
 export type BrowserDbOptions = DbOptions & {
-  /** URL to the sqlite3.wasm file. Defaults to "/sqlite3.wasm". */
+  /** URL of `sqlite3.wasm`. Default: the package's own file, located by the bundler. */
   wasmUrl?: string;
 };
 
-/** One engine instance per `wasmUrl`, started on first use. */
-const sqlite3Promises = new Map<string, Promise<Sqlite3Static>>();
+const MAIN_THREAD_PATH =
+  'newBrowserSqliteDb: { path } needs a Dedicated Worker (the "opfs-sahpool" OPFS VFS runs only ' +
+  "there). On the main thread, omit path for an in-memory database.";
 
-function getSqlite3(wasmUrl: string): Promise<Sqlite3Static> {
-  let sqlite3Promise = sqlite3Promises.get(wasmUrl);
-  if (!sqlite3Promise) {
-    sqlite3Promise = sqlite3InitModule({
-      locateFile: (file: string) => (file.endsWith(".wasm") ? wasmUrl : file),
-    });
-    sqlite3Promises.set(wasmUrl, sqlite3Promise);
+type InitModule = (module?: { locateFile?: (file: string) => string }) => Promise<Sqlite3Static>;
+
+/** One engine per wasmUrl, started on first use; one OPFS pool per engine. */
+const engines = new Map<string, Promise<Sqlite3Static>>();
+const pools = new WeakMap<Sqlite3Static, Promise<SAHPoolUtil>>();
+
+function getSqlite3(wasmUrl: string | undefined): Promise<Sqlite3Static> {
+  const key = wasmUrl ?? "";
+  let engine = engines.get(key);
+  if (!engine) {
+    engine = (sqlite3InitModule as InitModule)(
+      wasmUrl ? { locateFile: (file) => (file.endsWith(".wasm") ? wasmUrl : file) } : undefined,
+    );
+    engines.set(key, engine);
   }
-  return sqlite3Promise;
+  return engine;
 }
 
+function getPool(sqlite3: Sqlite3Static): Promise<SAHPoolUtil> {
+  let pool = pools.get(sqlite3);
+  if (!pool) {
+    pool = sqlite3.installOpfsSAHPoolVfs({});
+    pools.set(sqlite3, pool);
+  }
+  return pool;
+}
+
+const inDedicatedWorker = () =>
+  typeof (globalThis as { DedicatedWorkerGlobalScope?: unknown }).DedicatedWorkerGlobalScope !==
+  "undefined";
+
 /**
- * Create a libSQL WASM-backed {@link Db} in the browser.
+ * Create a SQLite {@link Db} on `@sqlite.org/sqlite-wasm`.
  *
- * Uses `@libsql/libsql-wasm-experimental` which provides the full libSQL
- * engine (FTS5, vector search) compiled to WebAssembly.
- *
- * @param options.path  File path for persistent storage. Omit for in-memory.
- * @param options.wasmUrl  URL to the sqlite3.wasm file. Defaults to "/sqlite3.wasm".
+ * @param options.path     OPFS database name; Dedicated Worker only. Omit for in-memory.
+ * @param options.wasmUrl  URL of `sqlite3.wasm`, when the bundler cannot locate it.
  */
 export async function newBrowserSqliteDb(options?: BrowserDbOptions): Promise<Db> {
-  const wasmUrl = options?.wasmUrl ?? "/sqlite3.wasm";
-  const sqlite3 = await getSqlite3(wasmUrl);
-  const dbPath = options?.path ?? ":memory:";
-  const db: Database = new sqlite3.oo1.DB(dbPath, "c");
-
-  return {
-    async query<T = DbEntry>(sql: string, params?: unknown[]): Promise<T[]> {
-      const rows = db.exec(sql, {
-        returnValue: "resultRows",
+  if (options?.path && !inDedicatedWorker()) throw new Error(MAIN_THREAD_PATH);
+  const sqlite3 = await getSqlite3(options?.wasmUrl);
+  const db: Database = options?.path
+    ? new (await getPool(sqlite3)).OpfsSAHPoolDb(options.path)
+    : new sqlite3.oo1.DB(":memory:", "c");
+  return newSerialisedSqliteDb({
+    all: (sql, params) =>
+      db.exec({
+        sql,
+        bind: params.length > 0 ? (params as BindableValue[]) : undefined,
         rowMode: "object",
-        bind: params as never[],
-      });
-      return rows as unknown as T[];
-    },
-
-    async exec(sql: string): Promise<void> {
+        returnValue: "resultRows",
+      }) as Record<string, unknown>[],
+    exec: (sql) => {
       db.exec(sql);
     },
-
-    async close(): Promise<void> {
-      db.close();
-    },
-  };
+    close: () => db.close(),
+  });
 }

@@ -2,23 +2,23 @@
 
 ## What it is
 
-A pnpm workspace with one database interface and four drivers for it. Code
+A pnpm workspace with one database interface and its drivers. Code
 written against the `Db` type from `@statewalker/db-api` runs on DuckDB, on SQLite
 (Node.js, browser WASM or a Durable Object) or on PGlite, depending on which driver
-creates the instance. A shared conformance suite checks that all four drivers
+creates the instance. A shared conformance suite checks that all drivers
 behave the same. The workspace depends on no other `@statewalker` package.
 
-## Layout: one interface, four drivers, one suite that checks them
+## Layout: one interface, its drivers, one suite that checks them
 
 ```
                      @statewalker/db-api   (types only: Db, DbEntry, DbOptions)
                                 |
-     +-------------------+------+-------------+--------------------+
-     |                   |                    |                    |
- db-duckdb-browser   db-duckdb-node     db-sqlite-browser     db-sqlite-node
- @duckdb/duckdb-wasm @duckdb/node-api   @sqlite.org/sqlite-wasm node:sqlite
-     |                   |                    |                    |
-     +-------------------+------+-------------+--------------------+
+     +-------------------+------+-------------+--------------------+-------------+
+     |                   |                    |                    |             |
+ db-duckdb-browser   db-duckdb-node     db-sqlite-browser     db-sqlite-node  db-pglite
+ @duckdb/duckdb-wasm @duckdb/node-api   @sqlite.org/sqlite-wasm node:sqlite  @electric-sql/pglite
+     |                   |                    |                    |             |
+     +-------------------+------+-------------+--------------------+-------------+
                                 |
                      @statewalker/db-tests  (private: runDbConformance)
 ```
@@ -31,6 +31,7 @@ behave the same. The workspace depends on no other `@statewalker` package.
 | `packages/db-sqlite-browser` | `@statewalker/db-sqlite-browser`: the official SQLite WASM build; in memory anywhere, OPFS in a Dedicated Worker | npm |
 | `packages/db-sqlite-node` | `@statewalker/db-sqlite-node`: Node.js's built-in `node:sqlite` | npm |
 | `packages/db-sqlite` | `@statewalker/db-sqlite`: `inTransaction` and the queue every SQLite driver uses | npm |
+| `packages/db-pglite` | `@statewalker/db-pglite`: PGlite (Postgres in WASM), Node.js and browser | npm |
 | `packages/db-sqlite-do` | `@statewalker/db-sqlite-do`: Durable Object SQLite, plus a Node.js fake | npm |
 | `packages/db-tests` | `@statewalker/db-tests`: the shared conformance suite | private |
 | `apps/sqlite-search-demo` | `@statewalker/sqlite-search-demo`: Vite demo of FTS5 and vector search on `@sqlite.org/sqlite-wasm` | private |

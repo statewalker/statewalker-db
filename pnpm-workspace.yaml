@@ -6,6 +6,9 @@ packages:
 catalog:
   "@changesets/cli": ^3.0.3
   "@sqlite.org/sqlite-wasm": 3.53.0-build1
+  "@electric-sql/pglite": ^0.5.8
+  # pgvector left the pglite package in 0.5 (was @electric-sql/pglite/vector)
+  "@electric-sql/pglite-pgvector": ^0.0.9
   '@biomejs/biome': ^2.5.15
   '@duckdb/duckdb-wasm': ^1.33.1-dev57.0
   '@duckdb/node-api': ^1.5.5-r.4

@@ -7,7 +7,13 @@ for (const [name, open] of Object.entries(BACKENDS)) {
   describe(`VectorIndex over ${name}`, { timeout: 60_000 }, () => {
     async function setup(metric: Metric = "cosine") {
       const db = await open();
-      const index = new VectorIndex({ db, prefix: "vec_", dims: D, metric });
+      const index = new VectorIndex({
+        db,
+        prefix: "vec_",
+        dims: D,
+        metric,
+        autoCompactAt: Infinity,
+      });
       await index.init();
       return { db, index };
     }

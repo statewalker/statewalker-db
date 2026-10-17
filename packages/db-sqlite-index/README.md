@@ -89,6 +89,17 @@ one and drops dead rows.
 
 A segment below 2048 vectors is one flat list: k-means would not pay off.
 
+### upsert() compacts at 4096 vectors, because a Durable Object operation has 15 s
+
+Compaction trains k-means and writes the whole segment in one transaction. On
+celld every Durable Object operation has a 15 s deadline, and compacting a much
+larger tail can exceed it. So `upsert()` compacts as soon as the tail holds
+`autoCompactAt` vectors (default 4096). If the deadline is hit anyway (very high
+`dims`, a slow host), the symptom is a timeout and a retried request, not an
+error from this package: the transaction rolls back and the tail is intact.
+Lower `autoCompactAt` in that case. Set it to `Infinity` to compact only when
+you call `compact()`.
+
 ### Storage stays inside Durable Object limits
 
 | Table | Holds |

@@ -27,6 +27,12 @@ export interface VectorIndexOptions {
   nlist?: (n: number) => number;
   /** Cache budget for list blocks read from SQLite, in bytes. Default 64 MiB. */
   cacheBytes?: number;
+  /**
+   * upsert() seals the tail into a segment once it holds this many vectors.
+   * Default 4096: compacting a larger tail risks the 15 s operation deadline of
+   * a Durable Object on celld. Infinity turns it off.
+   */
+  autoCompactAt?: number;
 }
 
 export interface VectorItem {
@@ -80,6 +86,7 @@ export class VectorIndex {
   readonly #db: Db;
   readonly #store: SqlSegmentStore;
   readonly #nlist?: (n: number) => number;
+  readonly #autoCompactAt: number;
   readonly #t: { meta: string; ids: string; tail: string };
 
   #state: State = { seq: 0, nextGen: 1, segments: [] };
@@ -105,6 +112,7 @@ export class VectorIndex {
     this.#db = opts.db;
     this.#store = new SqlSegmentStore(opts.db, opts.prefix, opts.dims, opts.cacheBytes);
     this.#nlist = opts.nlist;
+    this.#autoCompactAt = opts.autoCompactAt ?? 4096;
     const p = opts.prefix;
     this.#t = { meta: `${p}meta`, ids: `${p}ids`, tail: `${p}tail` };
     this.idTable = this.#t.ids;
@@ -204,6 +212,7 @@ export class VectorIndex {
         this.#state = next;
         for (const { id, vector } of batch) this.#tail.set(id, { seq, vector });
       });
+      if (this.#tail.size >= this.#autoCompactAt && !this.#maintaining) await this.compact();
     }
   }
 

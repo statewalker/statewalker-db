@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-pglite",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "PGlite (Postgres in WASM) driver for @statewalker/db-api, for Node.js and the browser.",

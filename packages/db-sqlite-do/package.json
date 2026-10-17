@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite-do",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Durable Object SQLite (ctx.storage) driver for @statewalker/db-api, with transactions through @statewalker/db-sqlite and a node:sqlite fake for tests.",

@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite-index",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Id-based vector (IVF) and n-gram indexes stored in SQLite through @statewalker/db-api: Node, browser and Durable Objects.",

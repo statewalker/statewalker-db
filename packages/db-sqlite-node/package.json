@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite-node",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "SQLite driver for @statewalker/db-api on Node.js's built-in node:sqlite, with transactions through @statewalker/db-sqlite.",

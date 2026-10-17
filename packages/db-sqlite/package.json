@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "SQLite transactions for @statewalker/db-api: inTransaction(db, cb) and the serialised engine wrapper every SQLite driver uses.",

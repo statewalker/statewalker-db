@@ -34,6 +34,7 @@ export const PACKAGES: ConsumerTarget[] = [
   { name: "@statewalker/db-sqlite", dir: "db-sqlite", subpaths: ["."] },
   { name: "@statewalker/db-duckdb-node", dir: "db-duckdb-node", subpaths: ["."] },
   { name: "@statewalker/db-sqlite-node", dir: "db-sqlite-node", subpaths: ["."] },
+  { name: "@statewalker/db-sqlite-do", dir: "db-sqlite-do", subpaths: [".", "./fake"] },
   {
     name: "@statewalker/db-duckdb-browser",
     dir: "db-duckdb-browser",

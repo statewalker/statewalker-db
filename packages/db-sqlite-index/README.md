@@ -14,8 +14,8 @@ its own documents table.
 ## Why it exists
 
 Durable Objects allow no native extensions, so sqlite-vec and pgvector are not
-available there, and their SQLite refuses BLOBs over ~2 MB, more than ~100 bound
-parameters, `PRAGMA` and `BEGIN`. This package is pure TypeScript over plain
+available there, and their SQLite refuses BLOBs and strings over about 2 MB, more than 100
+bound parameters, `PRAGMA` and `BEGIN`. This package is pure TypeScript over plain
 SQL and stays inside those limits, so one index implementation serves every
 runtime. It knows nothing about documents or search ranking. Callers map ids to
 their own records.
@@ -31,7 +31,12 @@ Create a `Db` with any SQLite driver whose `Db` supports `inTransaction` from
 `@statewalker/db-sqlite-browser`, `@statewalker/db-sqlite-do`), then:
 
 ```ts
+import { newNodeSqliteDb } from "@statewalker/db-sqlite-node";
 import { dropVectorIndex, VectorIndex } from "@statewalker/db-sqlite-index/vector";
+
+const db = await newNodeSqliteDb({ path: "./vectors.db" });
+const embedding = new Float32Array(384).fill(0.1); // your model's output
+const query = new Float32Array(384).fill(0.2);
 
 const index = new VectorIndex({ db, prefix: "vec_", dims: 384, metric: "cosine" });
 await index.init();
@@ -39,9 +44,18 @@ await index.upsert([{ id: 1, vector: embedding }]);
 const hits = await index.search(query, { k: 10 }); // [{ id, distance }], lower is closer
 ```
 
+`metric` is `"cosine"` (default), `"dot"` or `"l2"`. `search` defaults to `k: 10`,
+`nprobe: 8`, `oversample: 8`, `exact: false`; it also takes an `AbortSignal` as `signal`.
+`upsert`, `delete`, `search`, `getVectors`, `compact`, `merge` and `optimize` reject with
+`vector-index: call init() first` until `init()` ran.
+
 ## Examples
 
+Continuing with `db`, `index` and `query` from above:
+
 ```ts
+const allowed = new Set([1]);
+
 // Filter while searching (applied before re-ranking, so k results still come back).
 const mine = await index.search(query, { k: 10, filter: (id) => allowed.has(id) });
 
@@ -55,20 +69,29 @@ await index.delete([1, 2, 3]);
 await index.compact();
 await index.merge();
 
-// Read stored vectors back (normalised for cosine), and drop the whole index.
+// compact() then merge(), in one call.
+await index.optimize();
+
+// Read stored vectors back (normalised for cosine).
 const vectors = await index.getVectors([1, 2]); // Map<id, Float32Array>
-await dropVectorIndex(db, "vec_");
+
+// `stats` is { tail, segments, seq }: vectors in the tail, the segment list, the write sequence.
+const { tail, segments } = index.stats;
 
 // `idTable` names a table whose `id` column holds exactly the live ids:
 // join it in SQL to count or enumerate what the index contains.
-const [{ n }] = await db.query<{ n: number }>(`SELECT count(*) AS n FROM ${index.idTable}`);
+const [row] = await db.query<{ n: number }>(`SELECT count(*) AS n FROM ${index.idTable}`);
+const count = row?.n ?? 0;
+
+// Drop every table of the index; the `index` object is unusable afterwards.
+await dropVectorIndex(db, "vec_");
 ```
 
-Every write method runs its own `inTransaction`. Never call any engine method
-(`upsert`, `delete`, `compact`, `merge`, `search`, `getVectors`, `getTexts`) from inside an
-`inTransaction(db, …)` callback: the index holds the outer `Db`, so on Node.js
-and in the browser the inner call waits for the outer transaction to finish,
-which never happens — the callback hangs with no error.
+Every write method runs its own `inTransaction`. Never call an index method (`init`,
+`refresh`, `upsert`, `delete`, `compact`, `merge`, `optimize`, `search`, `getVectors`) from
+inside an `inTransaction(db, …)` callback: the index holds the outer `Db`, so the inner call
+waits for the outer transaction to finish, which never happens — the callback hangs with no
+error, on every runtime.
 
 Each engine needs its own prefix: both create `{p}meta`, with different columns, so a
 vector index and an n-gram index sharing a prefix break each other.
@@ -80,8 +103,8 @@ How much one call commits:
 - `compact()` and `merge()` are one transaction each.
 - An `upsert()` that reaches `autoCompactAt` runs `compact()` after its batch has committed. If
   that compaction fails, `upsert()` rejects although the items are stored. While an
-  auto-compact runs, an explicit `compact()` or `merge()` can reject with an "already running"
-  error: call it again afterwards.
+  auto-compact runs, an explicit `compact()` or `merge()` rejects with
+  `vector-index: compact or merge already running`: call it again afterwards.
 
 ## Internals
 
@@ -96,15 +119,16 @@ one and drops dead rows.
 
 ### Search narrows candidates three times
 
-1. Probe the `nprobe` lists whose centroids are closest to the query.
-2. A 1-bit filter keeps `k × oversample` rows per list. It estimates the real
-   metric from the signs of each vector's residual to its centroid, plus the
+1. Probe the `nprobe` lists (default 8) whose centroids are closest to the query.
+2. A 1-bit filter keeps `k × oversample` rows per list (`oversample` default 8). It
+   estimates the real metric from the signs of each vector's residual to its centroid, plus the
    residual's norm and its projection on the centroid (RaBitQ-style). This makes
    it accurate for `dot` and `l2` too, not only `cosine`.
 3. Re-rank the survivors with int8 codes. With `exact: true`, re-rank the top
    `4k` again with the stored float32 vectors.
 
-A segment below 2048 vectors is one flat list: k-means would not pay off.
+A segment below 2048 vectors is one flat list: k-means would not pay off. Larger segments
+get `round(√n)` lists, at most 1024, unless `nlist(n)` is passed to the constructor.
 
 ### upsert() compacts at 4096 vectors, because a Durable Object operation has 15 s
 
@@ -183,11 +207,17 @@ await grams.search("idx_(left|right)", { regex: true, caseSensitive: false, limi
 Ids are integers chosen by the caller. Hits come in ascending id order with every
 non-empty match; offsets are UTF-16 code units of the stored text.
 
+`search` options: `regex` (default `false`: the pattern is literal text), `caseSensitive`
+(default `true`), `limit` (default 100), `candidateBudget` (default 10,000), `filter(id)`
+(applied before verification) and `signal` (`AbortSignal`). `getTexts(ids)` returns the stored
+texts as a `Map<id, string>`, `drop()` deletes every table of the prefix, and `idTable`
+(`{prefix}texts`) is a table whose `id` column holds exactly the stored ids.
+
 `upsert` and `delete` are each one transaction, however many items they get: atomic, but
 unbounded against a Durable Object's 15 s operation deadline, so keep batches small. As in
-the vector section, never call `upsert`, `delete`, `search`, `getTexts` or `drop` from inside an
-`inTransaction(db, …)` callback on the same `Db`: the call hangs. Use a prefix of its own,
-different from any vector index on the same database.
+the vector section, never call `init`, `upsert`, `delete`, `search`, `getTexts` or `drop` from
+inside an `inTransaction(db, …)` callback on the same `Db`: the call hangs. Use a prefix of its
+own, different from any vector index on the same database.
 
 ## How a search stays exact
 
@@ -233,8 +263,10 @@ with `ngram: index "<prefix>" was created with store "fts5", opened with "postin
 - A lone surrogate in an upserted text is stored, indexed and returned as U+FFFD
   (`text.toWellFormed()`), so offsets and `getTexts` refer to that replaced text.
 - Methods other than `init` fail with SQLite's `no such table` until `init` ran.
-- On Durable Objects a single text above about 1.5 MB fails with
-  `string or blob too big`; batches are split automatically, single texts are not.
+- On Durable Objects a single text whose JSON-escaped UTF-8 form is over about 2 MB fails with
+  `string or blob too big` (on the fake: 1,990,000 ASCII characters pass, 2,000,000 fail;
+  with 2-byte characters such as Cyrillic the cut is near 1,000,000 characters). Batches are
+  split automatically, single texts are not.
 
 ## Internals of `./ngram`
 
@@ -247,8 +279,8 @@ with `ngram: index "<prefix>" was created with store "fts5", opened with "postin
   code point are hashed above 2^48, where a collision only adds a candidate.
 - Every write runs inside `inTransaction` from `@statewalker/db-sqlite`. Batches
   are sent as JSON through `json_each(?)` in parts of at most 500,000 code units,
-  because a Durable Object rejects more than ~100 bound parameters and values
-  above ~2 MB.
+  because a Durable Object rejects more than 100 bound parameters and values
+  over about 2 MB.
 - The regex-to-literals planner is ported from hypgrep's `regex.js` (MIT).
 - Dependencies: `@statewalker/db-api`, `@statewalker/db-sqlite`. The planner, fold
   and trigram code import neither.

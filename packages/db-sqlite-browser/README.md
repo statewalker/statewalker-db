@@ -22,12 +22,13 @@ pnpm add @statewalker/db-sqlite-browser
 
 | Import | Gives | Environment |
 | --- | --- | --- |
-| `@statewalker/db-sqlite-browser` | `newBrowserSqliteDb`; types `BrowserDbOptions`, `Db`, `DbEntry`, `DbOptions` | browser: main thread (in-memory) or Dedicated Worker (OPFS) |
+| `@statewalker/db-sqlite-browser` | `newBrowserSqliteDb`; types `BrowserDbOptions`, `Db`, `DbEntry`, `DbOptions` | browser: main thread (in-memory) or Dedicated Worker (OPFS); Node.js (in-memory) |
 
 `newBrowserSqliteDb({ path?, wasmUrl? })` returns `Promise<Db>`. Without `path` the database is
-in memory. With `path` it lives in OPFS through the `opfs-sahpool` VFS, which works only in a
-Dedicated Worker. Use `?` placeholders. Bundlers must not pre-bundle `@sqlite.org/sqlite-wasm`
-(Vite: `optimizeDeps.exclude`), or pass `wasmUrl`.
+in memory; that also works under Node.js (where a `wasmUrl`, if given, is a file path). With
+`path` it lives in OPFS through the `opfs-sahpool` VFS, which works only in a Dedicated Worker.
+Use `?` placeholders. Bundlers must not pre-bundle `@sqlite.org/sqlite-wasm` (Vite:
+`optimizeDeps.exclude`), or pass `wasmUrl`.
 
 ## Examples
 
@@ -44,7 +45,7 @@ const hits = await db.query("SELECT rowid FROM notes WHERE notes MATCH ?", ["sql
 
 - **Why OPFS only in a Dedicated Worker.** `opfs-sahpool` uses synchronous OPFS access handles,
   which browsers provide only in workers. It needs no `SharedArrayBuffer`, so no COOP/COEP
-  headers. On the main thread a `path` rejects at once with
+  headers. Outside a Dedicated Worker (the main thread, Node.js) a `path` rejects at once with
   `newBrowserSqliteDb: { path } needs a Dedicated Worker ...` rather than falling back to memory.
 - **One worker owns a database.** The pool holds its OPFS files open while the worker lives; a
   second worker (or tab) opening the same `path` fails with an OPFS lock error until the first

@@ -16,6 +16,7 @@ conformance suite.
 
 ```sh
 pnpm add @statewalker/db-pglite @electric-sql/pglite
+pnpm add @electric-sql/pglite-pgvector   # only for the pgvector example below
 ```
 
 | Import | Gives | Environment |

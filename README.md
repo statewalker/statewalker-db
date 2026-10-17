@@ -11,26 +11,19 @@ behave the same. The workspace depends on no other `@statewalker` package.
 ## Layout: one interface, its drivers, one suite that checks them
 
 ```
-                     @statewalker/db-api   (types only: Db, DbEntry, DbOptions)
-                                |
-     +-------------------+------+-------------+--------------------+-------------+
-     |                   |                    |                    |             |
- db-duckdb-browser   db-duckdb-node     db-sqlite-browser     db-sqlite-node  db-pglite
- @duckdb/duckdb-wasm @duckdb/node-api   @sqlite.org/sqlite-wasm node:sqlite  @electric-sql/pglite
-     |                   |                    |                    |             |
-     +-------------------+------+-------------+--------------------+-------------+
-                                |
-                     @statewalker/db-tests  (private: runDbConformance)
+ @statewalker/db-api   (types only: Db, DbEntry, DbOptions)
+  |
+  +-- db-duckdb-browser      @duckdb/duckdb-wasm
+  +-- db-duckdb-node         @duckdb/node-api
+  +-- db-pglite              @electric-sql/pglite
+  +-- db-sqlite              inTransaction + the call queue of every SQLite driver
+       +-- db-sqlite-browser   @sqlite.org/sqlite-wasm
+       +-- db-sqlite-node      node:sqlite
+       +-- db-sqlite-do        Durable Object ctx.storage
+       +-- db-sqlite-index     vector and n-gram indexes; run on a Db of any of the three above
 
- db-sqlite-node, db-sqlite-browser and db-sqlite-do also build on db-sqlite
- (inTransaction + call queue); db-sqlite-index (vector and n-gram indexes) builds on
- db-api and db-sqlite and runs on any of the three:
-
- db-sqlite-node  db-sqlite-browser  db-sqlite-do
-        \               |               /
-         +--------- db-sqlite ---------+
-                        |
-                 db-sqlite-index
+ @statewalker/db-tests (private): runDbConformance, run by every driver;
+ runSqliteTransactionConformance, run by the three SQLite drivers
 ```
 
 | Folder | Package | Published |
@@ -106,7 +99,11 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 - **A browser driver imports fine under Node.js, then fails.**
   `newBrowserDuckDb()` rejects with `Worker is not defined`;
   `newBrowserSqliteDb()` works in memory under Node.js but rejects a `path` (OPFS needs a Dedicated Worker).
-- **`pnpm run test:do` starts a celld node.** It runs `celld dev` on a free port with `--clean` on `packages/db-sqlite-do/test-do/.celld/dev` and stops it at the end; a version other than 0.6.x stops it before any test.
+- **`pnpm run test:do` starts a celld node.** It runs `celld dev packages/db-sqlite-do/test-do
+  --port <free port> --clean --no-watch` and stops that process at the end. A celld other than
+  0.6.x stops it before any test with `test:do needs celld 0.6.x on PATH, found "<version>"`; a
+  node that prints no `ready` line within 60 seconds fails it with `celld dev was not ready within
+  60 s`.
 
 ## Reference
 
@@ -126,11 +123,12 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 
 ### Releases
 
-Packages are published to npm from CI with
-[changesets](https://github.com/changesets/changesets). CI on `main` opens a
-"chore: version packages" pull request; merging it publishes the new versions.
-Add a changeset with `pnpm changeset` to choose the bump and the changelog text
-for your change.
+CI never publishes. A maintainer releases from a local checkout with
+[changesets](https://github.com/changesets/changesets): the pending changesets
+are applied (versions, `CHANGELOG.md`), the packages are published to npm, and
+the version commit is pushed to `main`. Add a changeset with `pnpm changeset`
+to choose the bump and the changelog text for your change; see
+`.changeset/README.md`.
 
 ### Files
 
@@ -140,7 +138,7 @@ for your change.
 | `biome.json` | lint and format rules |
 | `tsconfig.base.json` | shared TypeScript options |
 | `.changeset/` | changesets configuration and pending changesets |
-| `.github/workflows/` | CI and release workflows |
+| `.github/workflows/` | the CI workflow (lint, format, typecheck, build, test) |
 | `packages/PACKAGE_README.template.md` | starting point for a new package README |
 
 ### License

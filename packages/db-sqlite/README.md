@@ -34,11 +34,16 @@ import { inTransaction } from "@statewalker/db-sqlite";
 import { newNodeSqliteDb } from "@statewalker/db-sqlite-node";
 
 const db = await newNodeSqliteDb({ path: "./data.db" });
+await db.exec(`
+  CREATE TABLE IF NOT EXISTS docs (id INTEGER PRIMARY KEY, body TEXT);
+  CREATE TABLE IF NOT EXISTS log (doc_id INTEGER);
+`);
 const id = await inTransaction(db, async (tx) => {
   const [row] = await tx.query<{ id: number }>("INSERT INTO docs (body) VALUES (?) RETURNING id", ["x"]);
   await tx.query("INSERT INTO log (doc_id) VALUES (?)", [row?.id]);
   return row?.id;
 });
+await db.close();
 ```
 
 ## Internals
@@ -55,15 +60,16 @@ const id = await inTransaction(db, async (tx) => {
   joins that transaction, so a rollback cannot take it down. `close` waits for a running
   transaction.
 - **The `tx` handle expires.** After the callback settles, `tx.query` rejects with
-  `db-sqlite: the transaction is finished; use the outer Db`; `tx.close` always rejects.
+  `db-sqlite: the transaction is finished; use the outer Db`; `tx.close` always rejects, with
+  `db-sqlite: close the outer Db, not the transaction handle`.
 - **Inside `cb`, use only `tx`.** Calling the outer `db` (`db.query`, or `inTransaction(db, ...)`)
   from inside `cb` queues behind the very transaction it belongs to, so the call never resolves
   and no error is raised. Nothing detects this at runtime.
 - **Callback rules.** No external I/O inside `cb` (the queue is held for its whole duration), and
-  `cb` must be idempotent: Durable Objects may run it again.
+  `cb` must be idempotent: a Durable Object can run it more than once.
 - **Row counts.** There is no "rows changed" result: use `SELECT changes()` or `RETURNING` inside
   the transaction. Id lists longer than 100 go in one JSON parameter through `json_each(?)` —
-  Durable Objects reject more than 100 bound parameters.
+  Durable Objects reject more than 100 bound parameters with `too many SQL variables`.
 - **`SqliteEngine` is the driver seam.** `all` must run exactly one statement and return BLOBs as
   `Uint8Array`; `exec` must run every statement of the string; `transaction` is given only by
   engines that cannot run `BEGIN IMMEDIATE`.

@@ -22,8 +22,8 @@ pnpm add @statewalker/db-sqlite-do
 
 | Import | Gives | Environment |
 | --- | --- | --- |
-| `@statewalker/db-sqlite-do` | `newDoSqliteDb`; types `DoSqlStorage`, `DoSqlCursor` | Durable Object (Cloudflare, celld) |
-| `@statewalker/db-sqlite-do/fake` | `newFakeDoStorage` | Node.js (tests) |
+| `@statewalker/db-sqlite-do` | `newDoSqliteDb`; types `DoSqlStorage`, `DoSqlCursor`, `Db`, `DbEntry` | Durable Object (Cloudflare, celld) |
+| `@statewalker/db-sqlite-do/fake` | `newFakeDoStorage`; type `FakeDoStorage` | Node.js 22.13 or later (tests) |
 
 `newDoSqliteDb(storage)` returns a `Db` synchronously, so it can be created in the DO
 constructor. Use `?` placeholders.
@@ -61,22 +61,23 @@ const db = newDoSqliteDb(newFakeDoStorage());
 `pnpm test:do` (from the repository root) builds the workspace, starts `celld dev` on
 `packages/db-sqlite-do/test-do/` with a clean state on a free port, and runs, inside a real
 Durable Object, the shared `Db` conformance suite (through a small HTTP bridge), every scenario
-listed in `test-do/scenarios.ts` (the SQLite transaction scenarios a DO can meet, plus the smoke scenarios other
-packages register there), and a platform probe whose expectations the `./fake` must also meet. It
+listed in `test-do/scenarios.ts` (the SQLite transaction scenarios a DO can meet, plus the
+vector and n-gram smoke scenarios of `@statewalker/db-sqlite-index`), and a platform probe whose expectations the `./fake` must also meet. It
 needs celld 0.6.x on `PATH`; with another version it stops at once with
-`test:do needs celld 0.6.x on PATH, found "<version>"`. It stops only the celld process it
-started. It is not part of `pnpm test`: run it before a release.
+`test:do needs celld 0.6.x on PATH, found "<version>"`. A celld that prints no `ready` line within 60 seconds fails
+the run with `celld dev was not ready within 60 s`. It stops only the celld process it started. It is not part of `pnpm test`: run it before a release.
 
 ## Internals
 
 - **Transactions use `storage.transaction(async fn)`.** It rolls back on a throw even after
   `await`s on timers or `fetch`. `transactionSync` is not used: given an async function it commits
-  at the first `await`, so a later throw rolls nothing back. The platform may run the callback
+  at the first `await`, so a later throw rolls nothing back. The platform can run the callback
   again, so it must be idempotent and do no external I/O.
 - **Limits of DO SQLite, and what they look like:** more than 100 bound parameters rejects with
   `too many SQL variables` (pass id lists as one JSON string to `json_each(?)`); a BLOB or string
-  over about 2 MB rejects with `string or blob too big` (the fake measures a string in UTF-8 bytes); `BEGIN`, `SAVEPOINT` and `PRAGMA` reject
-  with `not authorized`.
+  over about 2 MB rejects with `string or blob too big` (celld 0.6.2 accepts 1,900,000 bytes and
+  rejects 2,500,000; the fake rejects above 2,000,000 bytes, measuring a string in UTF-8);
+  `BEGIN`, `SAVEPOINT` and `PRAGMA` reject with `not authorized`.
 - **`ON CONFLICT ROLLBACK` and `RAISE(ROLLBACK)` fail the whole DO call.** Inside `inTransaction`
   on a Durable Object, a statement that makes SQLite itself end the transaction rolls the data
   back, but the call in flight rejects with `a transaction rollback failed: … cannot rollback - no

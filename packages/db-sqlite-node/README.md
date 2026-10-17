@@ -3,7 +3,8 @@
 ## What it is
 
 A SQLite driver for Node.js that implements `Db` from `@statewalker/db-api` on Node.js's
-built-in `node:sqlite` (SQLite 3.53 in Node.js 24), with a local file or an in-memory database.
+built-in `node:sqlite` (Node.js 22.13 or later; Node.js 24.21 bundles SQLite 3.53.4), with a
+local file or an in-memory database.
 Its Db works with `inTransaction` from `@statewalker/db-sqlite`. FTS5 is included, with the
 `unicode61`, `porter` and `trigram` tokenizers.
 
@@ -54,8 +55,9 @@ await db.close();
 - **Errors are `node:sqlite`'s.** A path in a missing directory rejects with
   `unable to open database file`; bad SQL rejects with `near "...": syntax error`; a call after
   `close()` rejects with `db-sqlite: the database is closed`.
-- **Node.js prints `ExperimentalWarning: SQLite is an experimental feature`** on first use in
-  the Node.js versions that still mark `node:sqlite` experimental. It is harmless.
+- **Node.js 22 prints `ExperimentalWarning: SQLite is an experimental feature`** on first use,
+  because it still marks `node:sqlite` experimental. It is harmless; Node.js 24.21 prints
+  nothing.
 - **Dependencies:** `@statewalker/db-sqlite` (queue and transactions), `@statewalker/db-api`
   (types). The engine is part of Node.js.
 

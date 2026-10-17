@@ -5,14 +5,17 @@
 A private package (not published) with two Vitest suites,
 `runDbConformance` and `runSqliteTransactionConformance`, that checks a `Db` implementation from
 `@statewalker/db-api` against the shared contract. Every driver in this
-workspace runs it: the Node.js drivers in their `test` script, the browser
-drivers in headless Chromium through `test:browser`.
+workspace runs `runDbConformance`, and the three SQLite drivers also run
+`runSqliteTransactionConformance`: the Node.js drivers (and `db-sqlite-browser`, in memory) in
+their `test` script, the browser drivers in headless Chromium through `test:browser`, and
+`db-sqlite-do` both on its Node.js fake in `test` and inside a real Durable Object through
+`test:do`.
 
 ## Why it exists
 
 All drivers must behave the same through `Db`: the same results, the same
-rejections, the same handling of parameters. One suite run against all four
-keeps that true, instead of four copies of the same tests drifting apart.
+rejections, the same handling of parameters. One suite run against every
+driver keeps that true, instead of one copy of the same tests per driver drifting apart.
 
 ## How to use
 
@@ -31,7 +34,9 @@ block.
 - `options.skipFilePersistence?`: skip the scenario that writes to a temp
   directory with `node:fs`. Browser drivers set it to `true`.
 
-Exported: `runDbConformance`, types `MakeDb`, `RunDbConformanceOptions`.
+Exported from `@statewalker/db-tests`: `runDbConformance`, `runSqliteTransactionConformance`,
+`sqliteTransactionScenarios`; types `MakeDb`, `RunDbConformanceOptions`,
+`SqliteTransactionScenario` (`{ name, run(db) }`).
 
 `runSqliteTransactionConformance(makeDb)` registers a `describe("SQLite transaction
 conformance")` block for SQLite drivers (`makeDb: () => Promise<Db>`, a fresh empty Db each
@@ -70,7 +75,7 @@ runDbConformance(() => newBrowserDuckDb(), {
 
 ## Internals
 
-The suite has 10 scenarios:
+`runDbConformance` has 10 scenarios:
 
 1. The factory returns an object with the `Db` methods.
 2. A row written with `exec` is visible to a later `query`.

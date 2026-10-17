@@ -21,6 +21,16 @@ behave the same. The workspace depends on no other `@statewalker` package.
      +-------------------+------+-------------+--------------------+-------------+
                                 |
                      @statewalker/db-tests  (private: runDbConformance)
+
+ db-sqlite-node, db-sqlite-browser and db-sqlite-do also build on db-sqlite
+ (inTransaction + call queue); db-sqlite-index (vector and n-gram indexes) builds on
+ db-api and db-sqlite and runs on any of the three:
+
+ db-sqlite-node  db-sqlite-browser  db-sqlite-do
+        \               |               /
+         +--------- db-sqlite ---------+
+                        |
+                 db-sqlite-index
 ```
 
 | Folder | Package | Published |
@@ -32,6 +42,7 @@ behave the same. The workspace depends on no other `@statewalker` package.
 | `packages/db-sqlite-node` | `@statewalker/db-sqlite-node`: Node.js's built-in `node:sqlite` | npm |
 | `packages/db-sqlite` | `@statewalker/db-sqlite`: `inTransaction` and the queue every SQLite driver uses | npm |
 | `packages/db-pglite` | `@statewalker/db-pglite`: PGlite (Postgres in WASM), Node.js and browser | npm |
+| `packages/db-sqlite-index` | `@statewalker/db-sqlite-index`: IVF vector index (`./vector`) and trigram text/regex index (`./ngram`) in SQLite tables | npm |
 | `packages/db-sqlite-do` | `@statewalker/db-sqlite-do`: Durable Object SQLite, plus a Node.js fake | npm |
 | `packages/db-tests` | `@statewalker/db-tests`: the shared conformance suite | private |
 | `apps/sqlite-search-demo` | `@statewalker/sqlite-search-demo`: Vite demo of FTS5 and vector search on `@sqlite.org/sqlite-wasm` | private |
@@ -106,6 +117,7 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 | `pnpm run build` | `pnpm -r run build` (tsdown in every package, `vite build` for the demo) |
 | `pnpm run test` | `pnpm -r run test` (Vitest, Node.js) |
 | `pnpm run test:browser` | `test:browser` of `db-sqlite-browser` and `db-duckdb-browser` (Vitest browser mode, Playwright, Chromium) |
+| `pnpm run test:do` | builds, then runs `db-sqlite-do`'s Durable Object tests on a real celld (needs celld 0.6.x on PATH) |
 | `pnpm run typecheck` | `tsc --noEmit` in every package |
 | `pnpm run lint` / `lint:check` | `biome check --write .` / `biome check .` |
 | `pnpm run format` / `format:check` | `biome format --write .` / `biome format .` |

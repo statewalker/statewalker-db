@@ -31,6 +31,7 @@ export const PACKAGES: ConsumerTarget[] = [
     // runtime exports to assert non-empty.
     typesOnly: true,
   },
+  { name: "@statewalker/db-sqlite", dir: "db-sqlite", subpaths: ["."] },
   { name: "@statewalker/db-duckdb-node", dir: "db-duckdb-node", subpaths: ["."] },
   { name: "@statewalker/db-sqlite-node", dir: "db-sqlite-node", subpaths: ["."] },
   {

@@ -19,7 +19,8 @@
     "directory": "packages/db-tests"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./sqlite-transaction-scenarios": "./src/suites/sqlite-transaction-scenarios.ts"
   },
   "files": [
     "dist",
@@ -35,7 +36,8 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@statewalker/db-api": "workspace:^"
+    "@statewalker/db-api": "workspace:^",
+    "@statewalker/db-sqlite": "workspace:^"
   },
   "peerDependencies": {
     "vitest": "catalog:peers"

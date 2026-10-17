@@ -2,8 +2,8 @@
 
 ## What it is
 
-A private package (not published) with one Vitest suite,
-`runDbConformance`, that checks a `Db` implementation from
+A private package (not published) with two Vitest suites,
+`runDbConformance` and `runSqliteTransactionConformance`, that checks a `Db` implementation from
 `@statewalker/db-api` against the shared contract. Every driver in this
 workspace runs it: the Node.js drivers in their `test` script, the browser
 drivers in headless Chromium through `test:browser`.
@@ -32,6 +32,13 @@ block.
   directory with `node:fs`. Browser drivers set it to `true`.
 
 Exported: `runDbConformance`, types `MakeDb`, `RunDbConformanceOptions`.
+
+`runSqliteTransactionConformance(makeDb)` registers a `describe("SQLite transaction
+conformance")` block for SQLite drivers (`makeDb: () => Promise<Db>`, a fresh empty Db each
+time). Its scenarios are plain async functions with no Vitest import, exported as
+`sqliteTransactionScenarios` and from the subpath
+`@statewalker/db-tests/sqlite-transaction-scenarios`, so a Durable Object worker can bundle
+and run the very same checks against real DO SQLite.
 
 ## Examples
 
@@ -86,7 +93,8 @@ The suite has 10 scenarios:
 - **Engine-specific tests stay with each driver.** FTS and vector search use
   different SQL per engine (libSQL `fts5`, `libsql_vector_idx`; DuckDB `fts`
   and `vss` extensions), so they are not part of this suite.
-- **Dependencies:** `@statewalker/db-api` (the `Db` type); peer `vitest`.
+- **The transaction scenarios are vitest-free on purpose.** They throw `scenario check failed: ...` on the first failed check. The `db-sqlite-do` `test:do` harness runs them inside a Durable Object, where Vitest cannot run.
+- **Dependencies:** `@statewalker/db-api` (the `Db` type); `@statewalker/db-sqlite` (`inTransaction`, used by the transaction scenarios); peer `vitest`.
 
 ## License
 

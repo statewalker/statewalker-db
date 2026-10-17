@@ -1,18 +1,13 @@
 import type { Db } from "@statewalker/db-api";
-import { runDbConformance } from "@statewalker/db-tests";
+import { runDbConformance, runSqliteTransactionConformance } from "@statewalker/db-tests";
 import { afterEach, describe, expect, it } from "vitest";
 import { newNodeSqliteDb } from "./node-sqlite-db.js";
 
-// Common contract (CRUD, parameter binding, cardinality, close, file
-// persistence, error paths) is covered by the shared conformance suite.
-// libsql dialect: `?` placeholder; the spread normalizer drops libsql Row's
-// non-enumerable positional keys + length.
-runDbConformance(newNodeSqliteDb, {
-  placeholder: "?",
-  normalizeRow: (row) => ({ ...row }),
-});
+// Common contract and SQLite transactions come from the shared suites; FTS5 stays here.
+runDbConformance(newNodeSqliteDb, { placeholder: "?" });
+runSqliteTransactionConformance(() => newNodeSqliteDb());
 
-// Dialect-specific behavior kept per-adapter: libsql FTS5 + native vector index.
+// Engine-specific behaviour kept per driver: FTS5 with the default, porter and trigram tokenizers.
 describe("newNodeSqliteDb", () => {
   let db: Db;
 
@@ -23,6 +18,14 @@ describe("newNodeSqliteDb", () => {
   });
 
   describe("FTS5", () => {
+    it("has the trigram tokenizer (substring search)", async () => {
+      db = await newNodeSqliteDb();
+      await db.exec("CREATE VIRTUAL TABLE g USING fts5(c, tokenize='trigram')");
+      await db.exec("INSERT INTO g VALUES ('idx_lefthand')");
+      const rows = await db.query<{ c: string }>("SELECT c FROM g WHERE g MATCH 'x_le'");
+      expect(rows.map((r) => r.c)).toEqual(["idx_lefthand"]);
+    });
+
     it("returns empty results for unmatched search terms", async () => {
       db = await newNodeSqliteDb();
       await db.exec("CREATE VIRTUAL TABLE docs2_fts USING fts5(content)");
@@ -79,69 +82,6 @@ describe("newNodeSqliteDb", () => {
       const rowids = rows.map((r) => r.rowid);
       expect(rowids).toContain(1);
       expect(rowids).toContain(3);
-    });
-  });
-
-  describe("vector search", () => {
-    it("creates index and performs vector similarity search", async () => {
-      db = await newNodeSqliteDb();
-
-      await db.exec("CREATE TABLE embeddings (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
-      await db.exec("CREATE INDEX vec_idx ON embeddings (libsql_vector_idx(vec))");
-      await db.exec(`
-        INSERT INTO embeddings VALUES
-          (1, vector32('[1.0, 0.0, 0.0]')),
-          (2, vector32('[0.0, 1.0, 0.0]')),
-          (3, vector32('[0.0, 0.0, 1.0]'))
-      `);
-
-      const rows = await db.query<{ id: number }>(
-        "SELECT e.id FROM vector_top_k('vec_idx', '[1.0, 0.1, 0.0]', 1) AS v JOIN embeddings e ON e.rowid = v.id",
-      );
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.id).toBe(1);
-    });
-
-    it("returns k nearest neighbors ordered by distance", async () => {
-      db = await newNodeSqliteDb();
-
-      await db.exec("CREATE TABLE vectors (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
-      await db.exec("CREATE INDEX vec_idx2 ON vectors (libsql_vector_idx(vec))");
-      await db.exec(`
-        INSERT INTO vectors VALUES
-          (1, vector32('[1.0, 0.0, 0.0]')),
-          (2, vector32('[0.9, 0.1, 0.0]')),
-          (3, vector32('[0.0, 1.0, 0.0]')),
-          (4, vector32('[0.0, 0.0, 1.0]'))
-      `);
-
-      const rows = await db.query<{ id: number }>(
-        "SELECT e.id FROM vector_top_k('vec_idx2', '[1.0, 0.0, 0.0]', 2) AS v JOIN vectors e ON e.rowid = v.id",
-      );
-
-      expect(rows).toHaveLength(2);
-      const ids = rows.map((r) => r.id);
-      expect(ids).toContain(1);
-      expect(ids).toContain(2);
-    });
-
-    it("works without index (brute-force scan)", async () => {
-      db = await newNodeSqliteDb();
-
-      await db.exec("CREATE TABLE vecs_no_idx (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
-      await db.exec(`
-        INSERT INTO vecs_no_idx VALUES
-          (1, vector32('[1.0, 0.0, 0.0]')),
-          (2, vector32('[0.0, 1.0, 0.0]'))
-      `);
-
-      const rows = await db.query<{ id: number }>(
-        "SELECT id FROM vecs_no_idx ORDER BY vector_distance_cos(vec, vector32('[0.0, 0.9, 0.1]')) LIMIT 1",
-      );
-
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.id).toBe(2);
     });
   });
 });

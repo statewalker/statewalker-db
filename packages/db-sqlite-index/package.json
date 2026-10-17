@@ -1,0 +1,67 @@
+{
+  "name": "@statewalker/db-sqlite-index",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "Id-based vector (IVF) and n-gram indexes stored in SQLite through @statewalker/db-api: Node, browser and Durable Objects.",
+  "bugs": {
+    "url": "https://github.com/statewalker/statewalker-db/issues"
+  },
+  "homepage": "https://github.com/statewalker/statewalker-db/tree/main/packages/db-sqlite-index#readme",
+  "author": {
+    "name": "Mikhail Kotelnikov",
+    "email": "mikhail.kotelnikov@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/statewalker/statewalker-db.git",
+    "directory": "packages/db-sqlite-index"
+  },
+  "exports": {
+    "./vector": {
+      "source": "./src/vector/index.ts",
+      "types": "./dist/vector.d.mts",
+      "import": "./dist/vector.mjs"
+    },
+    "./ngram": {
+      "source": "./src/ngram/index.ts",
+      "types": "./dist/ngram.d.mts",
+      "import": "./dist/ngram.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "pnpm run build",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "bench": "tsx bench/vector-bench.ts 50000 384",
+    "clean": "rimraf dist",
+    "lint": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@statewalker/db-api": "workspace:^",
+    "@statewalker/db-sqlite": "workspace:^"
+  },
+  "devDependencies": {
+    "@statewalker/db-sqlite-do": "workspace:^",
+    "@statewalker/db-sqlite-node": "workspace:^",
+    "@types/node": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

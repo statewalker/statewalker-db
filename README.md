@@ -2,26 +2,28 @@
 
 ## What it is
 
-A pnpm workspace with one database interface and four drivers for it. Code
-written against the `Db` type from `@statewalker/db-api` runs on DuckDB or on
-SQLite (libSQL), in the browser or in Node.js, depending on which driver
-creates the instance. A shared conformance suite checks that all four drivers
+A pnpm workspace with one database interface and its drivers. Code
+written against the `Db` type from `@statewalker/db-api` runs on DuckDB, on SQLite
+(Node.js, browser WASM or a Durable Object) or on PGlite, depending on which driver
+creates the instance. A shared conformance suite checks that all drivers
 behave the same. The workspace depends on no other `@statewalker` package.
 
-## Layout: one interface, four drivers, one suite that checks them
+## Layout: one interface, its drivers, one suite that checks them
 
 ```
-                     @statewalker/db-api   (types only: Db, DbEntry, DbOptions)
-                                |
-     +-------------------+------+-------------+--------------------+
-     |                   |                    |                    |
- db-duckdb-browser   db-duckdb-node     db-sqlite-browser     db-sqlite-node
- @duckdb/duckdb-wasm @duckdb/node-api   @libsql/libsql-wasm-  @libsql/client
-                                        experimental
-     |                   |                    |                    |
-     +-------------------+------+-------------+--------------------+
-                                |
-                     @statewalker/db-tests  (private: runDbConformance)
+ @statewalker/db-api   (types only: Db, DbEntry, DbOptions)
+  |
+  +-- db-duckdb-browser      @duckdb/duckdb-wasm
+  +-- db-duckdb-node         @duckdb/node-api
+  +-- db-pglite              @electric-sql/pglite
+  +-- db-sqlite              inTransaction + the call queue of every SQLite driver
+       +-- db-sqlite-browser   @sqlite.org/sqlite-wasm
+       +-- db-sqlite-node      node:sqlite
+       +-- db-sqlite-do        Durable Object ctx.storage
+       +-- db-sqlite-index     vector and n-gram indexes; run on a Db of any of the three above
+
+ @statewalker/db-tests (private): runDbConformance, run by every driver;
+ runSqliteTransactionConformance, run by the three SQLite drivers
 ```
 
 | Folder | Package | Published |
@@ -29,8 +31,12 @@ behave the same. The workspace depends on no other `@statewalker` package.
 | `packages/db-api` | `@statewalker/db-api`: the `Db` interface | npm |
 | `packages/db-duckdb-browser` | `@statewalker/db-duckdb-browser`: DuckDB WASM in a Web Worker, optional OPFS persistence | npm |
 | `packages/db-duckdb-node` | `@statewalker/db-duckdb-node`: DuckDB with native Node.js bindings | npm |
-| `packages/db-sqlite-browser` | `@statewalker/db-sqlite-browser`: libSQL compiled to WASM, with FTS5 and vector search | npm |
-| `packages/db-sqlite-node` | `@statewalker/db-sqlite-node`: libSQL through `@libsql/client` | npm |
+| `packages/db-sqlite-browser` | `@statewalker/db-sqlite-browser`: the official SQLite WASM build; in memory anywhere, OPFS in a Dedicated Worker | npm |
+| `packages/db-sqlite-node` | `@statewalker/db-sqlite-node`: Node.js's built-in `node:sqlite` | npm |
+| `packages/db-sqlite` | `@statewalker/db-sqlite`: `inTransaction` and the queue every SQLite driver uses | npm |
+| `packages/db-pglite` | `@statewalker/db-pglite`: PGlite (Postgres in WASM), Node.js and browser | npm |
+| `packages/db-sqlite-index` | `@statewalker/db-sqlite-index`: IVF vector index (`./vector`) and trigram text/regex index (`./ngram`) in SQLite tables | npm |
+| `packages/db-sqlite-do` | `@statewalker/db-sqlite-do`: Durable Object SQLite, plus a Node.js fake | npm |
 | `packages/db-tests` | `@statewalker/db-tests`: the shared conformance suite | private |
 | `apps/sqlite-search-demo` | `@statewalker/sqlite-search-demo`: Vite demo of FTS5 and vector search on `@sqlite.org/sqlite-wasm` | private |
 | `tools/consumer-install` | `@statewalker/consumer-install-tests`: packs the public packages and installs them like an npm consumer | private |
@@ -48,7 +54,8 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 4. Optional, the browser drivers in headless Chromium:
    1. `pnpm exec playwright install chromium` (once)
    2. `pnpm run test:browser`
-5. Before pushing: `pnpm run lint:check`, `pnpm run format:check`,
+5. Optional, the Durable Object driver on a real celld: `pnpm run test:do` (needs celld 0.6.x on PATH).
+6. Before pushing: `pnpm run lint:check`, `pnpm run format:check`,
    `pnpm run typecheck`. CI runs these together with build and test.
 
 ## Why it is the way it is
@@ -64,11 +71,10 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
   that ask for it. Packages ship `src/` as well.
 - **`prepack` runs the build.** `pnpm pack` and publishing therefore never
   package a stale `dist/`.
-- **One conformance suite, parameterized.** The engines differ in two ways
-  that matter to the tests: the placeholder syntax (the suite uses `?` for
-  libSQL and `$1` for DuckDB), and libSQL rows carrying extra non-enumerable
-  keys. `runDbConformance` takes both as options, so no driver keeps its own
-  copy of the common tests.
+- **One conformance suite, parameterized.** The engines differ in the
+  placeholder syntax (`?` for SQLite, `$1` for DuckDB and PGlite), which
+  `runDbConformance` takes as an option, so no driver keeps its own copy of the
+  common tests. SQLite drivers also run `runSqliteTransactionConformance`.
 - **Browser tests have their own Vitest config.** Each browser driver has a
   `vitest.config.ts` that excludes `*.browser.test.ts`, and a
   `vitest.browser.config.ts` that runs only those files, in Chromium. A plain
@@ -88,11 +94,16 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
   `pnpm exec playwright install chromium`, `pnpm run test:browser` fails when
   it launches the browser, before any test runs.
 - **The DuckDB browser tests need network access.** They load the DuckDB WASM
-  bundle from jsDelivr. The libSQL browser tests serve `sqlite3.wasm` locally
-  (the config's `publicDir`) and work offline.
+  bundle from jsDelivr. The SQLite browser tests load `sqlite3.wasm` from the
+  installed package and work offline.
 - **A browser driver imports fine under Node.js, then fails.**
   `newBrowserDuckDb()` rejects with `Worker is not defined`;
-  `newBrowserSqliteDb()` aborts because it cannot load `/sqlite3.wasm`.
+  `newBrowserSqliteDb()` works in memory under Node.js but rejects a `path` (OPFS needs a Dedicated Worker).
+- **`pnpm run test:do` starts a celld node.** It runs `celld dev packages/db-sqlite-do/test-do
+  --port <free port> --clean --no-watch` and stops that process at the end. A celld other than
+  0.6.x stops it before any test with `test:do needs celld 0.6.x on PATH, found "<version>"`; a
+  node that prints no `ready` line within 60 seconds fails it with `celld dev was not ready within
+  60 s`.
 
 ## Reference
 
@@ -103,6 +114,7 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 | `pnpm run build` | `pnpm -r run build` (tsdown in every package, `vite build` for the demo) |
 | `pnpm run test` | `pnpm -r run test` (Vitest, Node.js) |
 | `pnpm run test:browser` | `test:browser` of `db-sqlite-browser` and `db-duckdb-browser` (Vitest browser mode, Playwright, Chromium) |
+| `pnpm run test:do` | builds, then runs `db-sqlite-do`'s Durable Object tests on a real celld (needs celld 0.6.x on PATH) |
 | `pnpm run typecheck` | `tsc --noEmit` in every package |
 | `pnpm run lint` / `lint:check` | `biome check --write .` / `biome check .` |
 | `pnpm run format` / `format:check` | `biome format --write .` / `biome format .` |
@@ -111,11 +123,12 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 
 ### Releases
 
-Packages are published to npm from CI with
-[changesets](https://github.com/changesets/changesets). CI on `main` opens a
-"chore: version packages" pull request; merging it publishes the new versions.
-Add a changeset with `pnpm changeset` to choose the bump and the changelog text
-for your change.
+CI never publishes. A maintainer releases from a local checkout with
+[changesets](https://github.com/changesets/changesets): the pending changesets
+are applied (versions, `CHANGELOG.md`), the packages are published to npm, and
+the version commit is pushed to `main`. Add a changeset with `pnpm changeset`
+to choose the bump and the changelog text for your change; see
+`.changeset/README.md`.
 
 ### Files
 
@@ -125,7 +138,7 @@ for your change.
 | `biome.json` | lint and format rules |
 | `tsconfig.base.json` | shared TypeScript options |
 | `.changeset/` | changesets configuration and pending changesets |
-| `.github/workflows/` | CI and release workflows |
+| `.github/workflows/` | the CI workflow (lint, format, typecheck, build, test) |
 | `packages/PACKAGE_README.template.md` | starting point for a new package README |
 
 ### License

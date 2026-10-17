@@ -2,7 +2,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 /**
  * Default (Node) config. The `*.browser.test.ts` conformance files run the
- * libSQL-WASM adapter inside a real browser and must NOT be picked up by the
+ * sqlite-wasm adapter inside a real browser and must NOT be picked up by the
  * plain `vitest run` (Node) invocation — they are excluded here and run only
  * through `vitest.browser.config.ts` (see the `test:browser` script).
  */

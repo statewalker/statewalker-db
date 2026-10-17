@@ -2,17 +2,20 @@
 
 ## What it is
 
-A private package (not published) with one Vitest suite,
-`runDbConformance`, that checks a `Db` implementation from
+A private package (not published) with two Vitest suites,
+`runDbConformance` and `runSqliteTransactionConformance`, that checks a `Db` implementation from
 `@statewalker/db-api` against the shared contract. Every driver in this
-workspace runs it: the Node.js drivers in their `test` script, the browser
-drivers in headless Chromium through `test:browser`.
+workspace runs `runDbConformance`, and the three SQLite drivers also run
+`runSqliteTransactionConformance`: the Node.js drivers (and `db-sqlite-browser`, in memory) in
+their `test` script, the browser drivers in headless Chromium through `test:browser`, and
+`db-sqlite-do` both on its Node.js fake in `test` and inside a real Durable Object through
+`test:do`.
 
 ## Why it exists
 
 All drivers must behave the same through `Db`: the same results, the same
-rejections, the same handling of parameters. One suite run against all four
-keeps that true, instead of four copies of the same tests drifting apart.
+rejections, the same handling of parameters. One suite run against every
+driver keeps that true, instead of one copy of the same tests per driver drifting apart.
 
 ## How to use
 
@@ -31,7 +34,17 @@ block.
 - `options.skipFilePersistence?`: skip the scenario that writes to a temp
   directory with `node:fs`. Browser drivers set it to `true`.
 
-Exported: `runDbConformance`, types `MakeDb`, `RunDbConformanceOptions`.
+Exported from `@statewalker/db-tests`: `runDbConformance`, `runSqliteTransactionConformance`,
+`sqliteTransactionScenarios`; types `MakeDb`, `RunDbConformanceOptions`,
+`SqliteTransactionScenario` (`{ name, run(db) }`).
+
+`runSqliteTransactionConformance(makeDb)` registers a `describe("SQLite transaction
+conformance")` block for SQLite drivers (`makeDb: () => Promise<Db>`, a fresh empty Db each
+time). Its scenarios are plain async functions with no Vitest import, exported as
+`sqliteTransactionScenarios` and from the subpath
+`@statewalker/db-tests/sqlite-transaction-scenarios`, so a Durable Object worker can bundle
+and run the very same checks against real DO SQLite. `{ skip: [name, …] }` drops the
+scenarios a platform cannot meet, by name.
 
 ## Examples
 
@@ -62,7 +75,7 @@ runDbConformance(() => newBrowserDuckDb(), {
 
 ## Internals
 
-The suite has 10 scenarios:
+`runDbConformance` has 10 scenarios:
 
 1. The factory returns an object with the `Db` methods.
 2. A row written with `exec` is visible to a later `query`.
@@ -75,18 +88,17 @@ The suite has 10 scenarios:
 9. Data written to a file survives close and reopen (Node.js only).
 10. Invalid SQL rejects.
 
-- **Why `normalizeRow`.** libSQL rows carry non-enumerable positional keys and
-  `length`, so `toEqual` against a plain object fails. `(row) => ({ ...row })`
-  keeps only the named columns and works for every driver.
+- **Why `normalizeRow`.** Some drivers return rows with a `null` prototype or
+  extra non-enumerable keys; `(row) => ({ ...row })` keeps only the named columns.
 - **Why the Node.js built-ins are imported through a variable.** The
   file-persistence scenario loads `node:fs/promises`, `node:os` and `node:path`
   with `import(specifier)` from a string variable, typed by a local shim. Vite
   cannot analyze a variable specifier, so a browser bundle never resolves them,
   and a browser typecheck needs no `@types/node`.
 - **Engine-specific tests stay with each driver.** FTS and vector search use
-  different SQL per engine (libSQL `fts5`, `libsql_vector_idx`; DuckDB `fts`
-  and `vss` extensions), so they are not part of this suite.
-- **Dependencies:** `@statewalker/db-api` (the `Db` type); peer `vitest`.
+  different SQL per engine (SQLite FTS5; DuckDB `fts` and `vss`), so they are not part of this suite.
+- **The transaction scenarios are vitest-free on purpose.** They throw `scenario check failed: ...` on the first failed check. The `db-sqlite-do` `test:do` harness runs them inside a Durable Object, where Vitest cannot run.
+- **Dependencies:** `@statewalker/db-api` (the `Db` type); `@statewalker/db-sqlite` (`inTransaction`, used by the transaction scenarios); peer `vitest`.
 
 ## License
 

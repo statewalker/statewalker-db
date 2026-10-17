@@ -1,0 +1,59 @@
+{
+  "name": "@statewalker/db-pglite",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "PGlite (Postgres in WASM) driver for @statewalker/db-api, for Node.js and the browser.",
+  "bugs": {
+    "url": "https://github.com/statewalker/statewalker-db/issues"
+  },
+  "homepage": "https://github.com/statewalker/statewalker-db/tree/main/packages/db-pglite#readme",
+  "author": {
+    "name": "Mikhail Kotelnikov",
+    "email": "mikhail.kotelnikov@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/statewalker/statewalker-db.git",
+    "directory": "packages/db-pglite"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "pnpm run build",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist",
+    "lint": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "catalog:",
+    "@statewalker/db-api": "workspace:^"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite-pgvector": "catalog:",
+    "@statewalker/db-tests": "workspace:^",
+    "@types/node": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

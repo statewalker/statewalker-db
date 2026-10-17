@@ -2,16 +2,17 @@
 
 ## What it is
 
-A libSQL/SQLite driver for the browser that implements `Db` from
-`@statewalker/db-api`. It runs `@libsql/libsql-wasm-experimental`, a
-WebAssembly build of libSQL that includes FTS5 full-text search and libSQL
-vector search (`F32_BLOB`, `vector32`, `libsql_vector_idx`, `vector_top_k`).
+A SQLite driver for the browser that implements `Db` from `@statewalker/db-api` on the official
+WebAssembly build, `@sqlite.org/sqlite-wasm` (SQLite 3.53, FTS5 with the `unicode61`, `porter`
+and `trigram` tokenizers). It opens an in-memory database anywhere, and a persistent database in
+the origin-private file system (OPFS) from a Dedicated Worker. Its Db works with `inTransaction`
+from `@statewalker/db-sqlite`.
 
 ## Why it exists
 
-It gives browser code SQLite with full-text and vector search behind the same
-`Db` interface that `@statewalker/db-sqlite-node` provides in Node.js, so
-search and storage code runs unchanged in both places.
+It lets code written against `Db` run on SQLite in the browser with the same SQL as on Node.js
+(`@statewalker/db-sqlite-node`) and in Durable Objects (`@statewalker/db-sqlite-do`), so search
+and storage code is written and tested once.
 
 ## How to use
 
@@ -19,70 +20,44 @@ search and storage code runs unchanged in both places.
 pnpm add @statewalker/db-sqlite-browser
 ```
 
-You must serve the engine's `sqlite3.wasm`. It is in
-`@libsql/libsql-wasm-experimental/sqlite-wasm/jswasm/`. The driver loads it
-from `/sqlite3.wasm` unless you pass `wasmUrl`.
-
 | Import | Gives | Environment |
 | --- | --- | --- |
-| `@statewalker/db-sqlite-browser` | `newBrowserSqliteDb`, type `BrowserDbOptions`; types `Db`, `DbEntry`, `DbOptions` re-exported from `@statewalker/db-api` | browser |
+| `@statewalker/db-sqlite-browser` | `newBrowserSqliteDb`; types `BrowserDbOptions`, `Db`, `DbEntry`, `DbOptions` | browser: main thread (in-memory) or Dedicated Worker (OPFS); Node.js (in-memory) |
 
-`newBrowserSqliteDb(options?)` returns `Promise<Db>`.
-
-- `options.wasmUrl`: URL of `sqlite3.wasm`. Default `"/sqlite3.wasm"`.
-- `options.path`: database name passed to the engine. Default `:memory:`.
-
-The `Db` implements `query`, `exec` and `close`; it has no `flush`. Use `?`
-placeholders.
+`newBrowserSqliteDb({ path?, wasmUrl? })` returns `Promise<Db>`. Without `path` the database is
+in memory; that also works under Node.js (where a `wasmUrl`, if given, is a file path). With
+`path` it lives in OPFS through the `opfs-sahpool` VFS, which works only in a Dedicated Worker.
+Use `?` placeholders. Bundlers must not pre-bundle `@sqlite.org/sqlite-wasm` (Vite:
+`optimizeDeps.exclude`), or pass `wasmUrl`.
 
 ## Examples
 
-Full-text search:
-
 ```ts
+// worker.ts — started with new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })
 import { newBrowserSqliteDb } from "@statewalker/db-sqlite-browser";
 
-const db = await newBrowserSqliteDb({ wasmUrl: "/assets/sqlite3.wasm" });
-await db.exec("CREATE VIRTUAL TABLE docs USING fts5(content)");
-await db.exec("INSERT INTO docs (rowid, content) VALUES (1, 'hello world')");
-const hits = await db.query<{ content: string }>(
-  "SELECT content FROM docs WHERE docs MATCH ?",
-  ["hello"],
-);
-await db.close();
-```
-
-Vector search:
-
-```ts
-import { newBrowserSqliteDb } from "@statewalker/db-sqlite-browser";
-
-const db = await newBrowserSqliteDb();
-await db.exec("CREATE TABLE emb (id INTEGER PRIMARY KEY, vec F32_BLOB(3))");
-await db.exec("CREATE INDEX emb_idx ON emb (libsql_vector_idx(vec))");
-await db.exec("INSERT INTO emb VALUES (1, vector32('[1,0,0]')), (2, vector32('[0,1,0]'))");
-const nearest = await db.query<{ id: number }>(
-  "SELECT e.id FROM vector_top_k('emb_idx', '[1,0.1,0]', 1) AS v JOIN emb e ON e.rowid = v.id",
-);
+const db = await newBrowserSqliteDb({ path: "/notes.db" });
+await db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS notes USING fts5(body)");
+const hits = await db.query("SELECT rowid FROM notes WHERE notes MATCH ?", ["sqlite"]);
 ```
 
 ## Internals
 
-- **The engine loads once per `wasmUrl`.** The first call with a given
-  `wasmUrl` starts the WASM module; later calls with the same URL reuse it, and
-  a call with a different URL starts a separate engine. A failed start is
-  cached too: if `sqlite3.wasm` was not found at a URL, every later call with
-  that URL fails the same way until the page reloads.
-- **No OPFS.** `options.path` goes to `new sqlite3.oo1.DB(path, "c")`. The
-  driver does not install or select an OPFS VFS.
-- **Synchronous engine, async interface.** `query` runs
-  `db.exec(sql, { rowMode: "object", returnValue: "resultRows", bind })` on the
-  calling thread; the `Db` methods are `async` only to match the interface.
-  Long queries block the thread they run on.
-- **Under Node.js** the module imports, but `newBrowserSqliteDb()` aborts with
-  `ENOENT ... '/sqlite3.wasm'`. Use `@statewalker/db-sqlite-node` there.
-- **Dependencies:** `@libsql/libsql-wasm-experimental` (the engine),
-  `@statewalker/db-api` (the interface types).
+- **Why OPFS only in a Dedicated Worker.** `opfs-sahpool` uses synchronous OPFS access handles,
+  which browsers provide only in workers. It needs no `SharedArrayBuffer`, so no COOP/COEP
+  headers. Outside a Dedicated Worker (the main thread, Node.js) a `path` rejects at once with
+  `newBrowserSqliteDb: { path } needs a Dedicated Worker ...` rather than falling back to memory.
+- **One worker owns a database.** The pool holds its OPFS files open while the worker lives; a
+  second worker (or tab) opening the same `path` fails with an OPFS lock error until the first
+  one is terminated.
+- **The pool has room for a few files.** Its default capacity is 6 files, and each database also
+  uses journal files, so a worker that opens many databases can run out of slots.
+- **Calls are queued** and transactions open with `BEGIN IMMEDIATE` (see `@statewalker/db-sqlite`).
+  Rows are plain objects; BLOBs are `Uint8Array`.
+- **The engine loads once per `wasmUrl`.** A failed load (for example a wrong `wasmUrl`) is not
+  retried for that URL.
+- **Dependencies:** `@sqlite.org/sqlite-wasm` (the engine), `@statewalker/db-sqlite` (queue and
+  transactions), `@statewalker/db-api` (types).
 
 ## License
 

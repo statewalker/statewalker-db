@@ -31,8 +31,16 @@ export const PACKAGES: ConsumerTarget[] = [
     // runtime exports to assert non-empty.
     typesOnly: true,
   },
+  { name: "@statewalker/db-sqlite", dir: "db-sqlite", subpaths: ["."] },
   { name: "@statewalker/db-duckdb-node", dir: "db-duckdb-node", subpaths: ["."] },
   { name: "@statewalker/db-sqlite-node", dir: "db-sqlite-node", subpaths: ["."] },
+  { name: "@statewalker/db-pglite", dir: "db-pglite", subpaths: ["."] },
+  { name: "@statewalker/db-sqlite-do", dir: "db-sqlite-do", subpaths: [".", "./fake"] },
+  {
+    name: "@statewalker/db-sqlite-index",
+    dir: "db-sqlite-index",
+    subpaths: ["./vector", "./ngram"],
+  },
   {
     name: "@statewalker/db-duckdb-browser",
     dir: "db-duckdb-browser",
@@ -211,6 +219,17 @@ function installFromTarball(target: ConsumerTarget): string {
 }
 
 /** (1) Every subpath an exports map declares must be listed and tested. */
+describe("PACKAGES", () => {
+  it("lists every public package under packages/", () => {
+    const publicNames = readdirSync(join(REPO, "packages"), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && existsSync(join(REPO, "packages", e.name, "package.json")))
+      .map((e) => JSON.parse(readFileSync(join(REPO, "packages", e.name, "package.json"), "utf8")))
+      .filter((pkg) => pkg.private !== true)
+      .map((pkg) => pkg.name as string);
+    expect(publicNames.filter((name) => !PACKAGES.some((p) => p.name === name))).toEqual([]);
+  });
+});
+
 describe.each(PACKAGES)("$name declares every exports subpath to the harness", (target) => {
   it("subpaths match the package's exports map", () => {
     const manifest = JSON.parse(

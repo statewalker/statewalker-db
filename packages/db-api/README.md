@@ -12,7 +12,8 @@ Code that stores or searches data should not depend on which engine runs
 underneath, or on whether it runs in a browser or in Node.js. Writing it
 against `Db` lets the caller pick the engine at startup: one of
 `@statewalker/db-duckdb-browser`, `@statewalker/db-duckdb-node`,
-`@statewalker/db-sqlite-browser` or `@statewalker/db-sqlite-node`. Keeping the
+`@statewalker/db-sqlite-browser`, `@statewalker/db-sqlite-node`,
+`@statewalker/db-sqlite-do` or `@statewalker/db-pglite`. Keeping the
 interface in its own package means a library can accept a `Db` without pulling
 in any engine.
 
@@ -38,7 +39,9 @@ runtime.
 - `close()` releases the database. Calls after `close` reject.
 - `DbEntry` is `Record<string, unknown>`, the default row type.
 - `DbOptions` is `{ path?: string }`: a file path in Node.js, an OPFS path in
-  the browser. Without `path`, a driver opens an in-memory database.
+  the browser. Without `path`, a driver opens an in-memory database. PGlite
+  reads `path` as a data directory; the Durable Object driver takes the DO's
+  storage instead of options.
 
 ## Examples
 
@@ -69,8 +72,10 @@ export async function save(db: Db, sql: string): Promise<void> {
 - **Types only.** `src/index.ts` has nothing but `export type`, so the build
   emits an empty module. Importing it at runtime succeeds and gives nothing.
 - **No transaction API and no prepared-statement handles.** The interface
-  does not have them; send `BEGIN` / `COMMIT` as SQL through `exec` if you need
-  a transaction.
+  does not have them. On a SQLite Db use `inTransaction(db, cb)` from
+  `@statewalker/db-sqlite`: a Durable Object rejects SQL `BEGIN` with
+  `not authorized`. On DuckDB and PGlite, send `BEGIN; ...; COMMIT` as one
+  `exec`.
 - **`flush` is optional.** It exists for engines that buffer writes, such as
   DuckDB WASM on OPFS, which writes its file only on `CHECKPOINT`. In-memory
   and auto-syncing engines omit it.

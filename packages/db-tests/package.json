@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "type": "module",
-  "description": "Shared conformance test suite for @statewalker/db-api implementations. Consumed by the db-* node adapters and, via Vitest browser mode, the browser adapters (pass skipFilePersistence to drop the node-only scenario).",
+  "description": "Shared conformance suites for @statewalker/db-api drivers: runDbConformance for every driver (Node.js and Vitest browser mode) and runSqliteTransactionConformance for SQLite drivers, with vitest-free scenarios a Durable Object can run.",
   "bugs": {
     "url": "https://github.com/statewalker/statewalker-db/issues"
   },
@@ -19,7 +19,8 @@
     "directory": "packages/db-tests"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./sqlite-transaction-scenarios": "./src/suites/sqlite-transaction-scenarios.ts"
   },
   "files": [
     "dist",
@@ -35,7 +36,8 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@statewalker/db-api": "workspace:^"
+    "@statewalker/db-api": "workspace:^",
+    "@statewalker/db-sqlite": "workspace:^"
   },
   "peerDependencies": {
     "vitest": "catalog:peers"

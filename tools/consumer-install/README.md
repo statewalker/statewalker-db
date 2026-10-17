@@ -11,6 +11,7 @@ raw TypeScript, or `workspace:` specifiers left in the packed manifest.
 ## The shape: pack the closure, install, probe
 
 ```
+check: every public packages/* package has an entry in PACKAGES
 for each target in PACKAGES (consumer-install.test.ts):
   check: its subpaths list equals the keys of its exports map
   closure = target + every packages/* package it depends on (transitively)
@@ -21,9 +22,10 @@ for each target in PACKAGES (consumer-install.test.ts):
   check: packed package.json has no workspace:/catalog: specifier
 ```
 
-Targets: `@statewalker/db-api` (types only), `db-duckdb-node`,
-`db-sqlite-node`, `db-duckdb-browser` and `db-sqlite-browser` (both browser
-only: installed and checked, not imported).
+Targets: `@statewalker/db-api` (types only), `db-sqlite`, `db-duckdb-node`,
+`db-sqlite-node`, `db-pglite`, `db-sqlite-do` (`.` and `./fake`),
+`db-sqlite-index` (`./vector` and `./ngram`), `db-duckdb-browser` and
+`db-sqlite-browser` (both browser only: installed and checked, not imported).
 
 ## How to run it
 
@@ -64,11 +66,11 @@ It also runs as part of the root `pnpm run test`. It needs `pnpm` and `npm` on
   Node.js, importing `.ts` from `node_modules` fails with
   `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. The test shows it as
   `Command failed: node probe.mjs` with that code in the output.
-- **New packages are not checked automatically.** A new public package needs
-  an entry in `PACKAGES` in `consumer-install.test.ts`. Until then it is only
-  packed as part of other packages' closures. A new `exports` subpath on a
-  listed package fails "subpaths match the package's exports map" until it is
-  added to that entry's `subpaths`.
+- **A new package fails the suite until it is listed.** A public package under
+  `packages/` without an entry in `PACKAGES` in `consumer-install.test.ts`
+  fails "lists every public package under packages/". A new `exports` subpath
+  on a listed package fails "subpaths match the package's exports map" until it
+  is added to that entry's `subpaths`.
 - **Tarballs are written into `packages/<dir>/` for a moment.** `pnpm pack`
   writes there and the test deletes them after `npm install`. An interrupted
   run can leave `*.tgz` files behind.

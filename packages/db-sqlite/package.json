@@ -1,0 +1,56 @@
+{
+  "name": "@statewalker/db-sqlite",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "SQLite transactions for @statewalker/db-api: inTransaction(db, cb) and the serialised engine wrapper every SQLite driver uses.",
+  "bugs": {
+    "url": "https://github.com/statewalker/statewalker-db/issues"
+  },
+  "homepage": "https://github.com/statewalker/statewalker-db/tree/main/packages/db-sqlite#readme",
+  "author": {
+    "name": "Mikhail Kotelnikov",
+    "email": "mikhail.kotelnikov@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/statewalker/statewalker-db.git",
+    "directory": "packages/db-sqlite"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "pnpm run build",
+    "dev": "tsdown --watch",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist",
+    "lint": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@statewalker/db-api": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

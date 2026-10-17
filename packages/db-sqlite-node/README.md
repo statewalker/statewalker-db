@@ -2,17 +2,18 @@
 
 ## What it is
 
-A libSQL/SQLite driver for Node.js that implements `Db` from
-`@statewalker/db-api`. It uses `@libsql/client` with a local file or an
-in-memory database. libSQL includes FTS5 full-text search and vector search
-(`F32_BLOB`, `vector32`, `libsql_vector_idx`, `vector_top_k`).
+A SQLite driver for Node.js that implements `Db` from `@statewalker/db-api` on Node.js's
+built-in `node:sqlite` (Node.js 22.13 or later; Node.js 24.21 bundles SQLite 3.53.4), with a
+local file or an in-memory database.
+Its Db works with `inTransaction` from `@statewalker/db-sqlite`. FTS5 is included, with the
+`unicode61`, `porter` and `trigram` tokenizers.
 
 ## Why it exists
 
 It lets code written against `Db` run on SQLite in Node.js, with the same SQL
 features that `@statewalker/db-sqlite-browser` has in the browser. Search and
 storage code can be built and tested in Node.js and shipped to the browser
-unchanged.
+unchanged. It needs no native addon or extra download, since the engine ships with Node.js.
 
 ## How to use
 
@@ -24,9 +25,10 @@ pnpm add @statewalker/db-sqlite-node
 | --- | --- | --- |
 | `@statewalker/db-sqlite-node` | `newNodeSqliteDb`; types `Db`, `DbEntry`, `DbOptions` re-exported from `@statewalker/db-api` | Node.js |
 
-`newNodeSqliteDb(options?)` returns `Promise<Db>`. It opens `file:<path>`, or
-`:memory:` without a path. The `Db` implements `query`, `exec` and `close`; it
-has no `flush`. Use `?` placeholders.
+`newNodeSqliteDb(options?)` returns `Promise<Db>`. It opens `path`, or `:memory:` without one.
+The `Db` implements `query`, `exec` and `close`; it has no `flush` (every commit is on disk).
+Use `?` placeholders. Wrap related writes in `inTransaction(db, async (tx) => ...)` from
+`@statewalker/db-sqlite`.
 
 ## Examples
 
@@ -42,19 +44,22 @@ await db.close();
 
 ## Internals
 
-- **Local only.** The driver builds the client URL itself (`file:<path>` or
-  `:memory:`), so remote libSQL servers (`libsql://` URLs with an auth token)
-  cannot be reached through it.
-- **Rows are libSQL `Row` objects.** Named columns are enumerable; positional
-  keys and `length` are also present but non-enumerable. `{ ...row }` and
-  `JSON.stringify(row)` give only the named columns, while `row.length` and
-  `row[0]` still work.
-- **Errors are libSQL's.** A path that cannot be opened rejects with
-  `ConnectionFailed("Unable to open connection to local database ...: 14")`.
-  Bad SQL rejects with `SQLITE_ERROR: near "...": syntax error`. A call after
-  `close()` rejects with `CLIENT_CLOSED: The client is closed`.
-- **Dependencies:** `@libsql/client` (the engine), `@statewalker/db-api` (the
-  interface types).
+- **Calls are queued.** The Db runs one call at a time in call order, and opens transactions
+  with `BEGIN IMMEDIATE` (see `@statewalker/db-sqlite`). `node:sqlite` is synchronous, so a long
+  statement blocks the event loop while it runs.
+- **`query` runs one statement.** Anything after the first `;` is ignored without an error;
+  use `exec` for multi-statement scripts.
+- **Rows are plain objects with a `null` prototype**, BLOBs are `Uint8Array`, integers are
+  JavaScript numbers: reading an integer above 2^53 rejects the whole query with `Value is too
+  large to be represented as a JavaScript number: 9007199254740993`.
+- **Errors are `node:sqlite`'s.** A path in a missing directory rejects with
+  `unable to open database file`; bad SQL rejects with `near "...": syntax error`; a call after
+  `close()` rejects with `db-sqlite: the database is closed`.
+- **Node.js 22 prints `ExperimentalWarning: SQLite is an experimental feature`** on first use,
+  because it still marks `node:sqlite` experimental. It is harmless; Node.js 24.21 prints
+  nothing.
+- **Dependencies:** `@statewalker/db-sqlite` (queue and transactions), `@statewalker/db-api`
+  (types). The engine is part of Node.js.
 
 ## License
 

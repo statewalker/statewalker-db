@@ -43,6 +43,7 @@
     "@statewalker/db-api": "workspace:^"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

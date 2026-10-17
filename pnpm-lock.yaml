@@ -220,6 +220,9 @@ importers:
         specifier: workspace:^
         version: link:../db-api
     devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.4
       rimraf:
         specifier: 'catalog:'
         version: 6.1.3

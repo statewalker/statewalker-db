@@ -1,5 +1,12 @@
 # @statewalker/db-sqlite-browser
 
+## 0.2.1
+
+### Patch Changes
+
+- 26d07e6: `newBrowserSqliteDb` takes `capacity`: the minimum number of files the OPFS pool holds. The default
+  pool of 6 files holds about five databases; a full pool fails with `SQLITE_CANTOPEN`.
+
 ## 0.2.0
 
 ### Minor Changes

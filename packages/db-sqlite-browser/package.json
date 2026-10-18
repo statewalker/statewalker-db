@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-sqlite-browser",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "type": "module",
   "description": "SQLite WASM (@sqlite.org/sqlite-wasm) driver for @statewalker/db-api in the browser: in-memory anywhere, OPFS persistence in a Dedicated Worker.",

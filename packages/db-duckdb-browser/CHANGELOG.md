@@ -1,5 +1,13 @@
 # @statewalker/db-duckdb-browser
 
+## 0.1.5
+
+### Patch Changes
+
+- Release of the changes since the last published version:
+  
+  - @statewalker/db-api ^0.1.3 -> ^0.1.4
+
 ## 0.1.4
 
 ### Patch Changes

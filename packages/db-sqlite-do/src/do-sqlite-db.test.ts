@@ -57,6 +57,11 @@ describe("newFakeDoStorage", () => {
       { t: "blob", n: 0 },
       { t: "blob", n: 0 },
     ]);
+    const back = await db.query<{ d: unknown }>("SELECT d FROM e ORDER BY k");
+    for (const { d } of back) {
+      expect(d).toBeInstanceOf(Uint8Array);
+      expect((d as Uint8Array).byteLength).toBe(0);
+    }
     await db.close();
   });
 

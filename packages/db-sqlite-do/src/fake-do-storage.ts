@@ -3,6 +3,12 @@ import type { DoSqlStorage } from "./do-sqlite-db.js";
 
 export type FakeDoStorage = DoSqlStorage & { close(): void };
 
+/**
+ * An empty view over a real buffer. node:sqlite (Node 22) binds a view whose buffer has no backing
+ * store, such as `new Uint8Array(new ArrayBuffer(0))`, as NULL; the platform stores an empty BLOB.
+ */
+const EMPTY_BLOB = new Uint8Array(1).subarray(0, 0);
+
 /** Limits probed on celld's DO SQLite (see test-do/platform-probe.ts). */
 const MAX_BOUND_PARAMETERS = 100;
 const MAX_VALUE_BYTES = 2_000_000;
@@ -14,12 +20,6 @@ const NOT_AUTHORIZED = /^\s*(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|PRAGMA)
  * read as ArrayBuffer, and bound strings (UTF-8 bytes) and BLOBs at most ~2 MB. `transaction` runs the closure between BEGIN and
  * COMMIT/ROLLBACK and, like the platform, does not queue concurrent calls.
  */
-/**
- * An empty view over a real buffer. node:sqlite (Node 22) binds a view whose buffer has no backing
- * store, such as `new Uint8Array(new ArrayBuffer(0))`, as NULL; the platform stores an empty BLOB.
- */
-const EMPTY_BLOB = new Uint8Array(1).subarray(0, 0);
-
 export function newFakeDoStorage(): FakeDoStorage {
   const db = new DatabaseSync(":memory:");
   const bind = (value: unknown): SQLInputValue => {

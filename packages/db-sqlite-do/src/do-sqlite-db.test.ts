@@ -46,6 +46,25 @@ describe("newFakeDoStorage", () => {
     }
   });
 
+  it("stores an empty BLOB as a BLOB through the driver (not NULL, on any Node)", async () => {
+    const db = newDoSqliteDb(newFakeDoStorage());
+    await db.exec("CREATE TABLE e (k INTEGER PRIMARY KEY, d BLOB)");
+    await db.query("INSERT INTO e VALUES (1, ?), (2, ?)", [
+      new Uint8Array(0),
+      new Uint8Array(new ArrayBuffer(0)),
+    ]);
+    expect(await db.query("SELECT typeof(d) AS t, length(d) AS n FROM e ORDER BY k")).toEqual([
+      { t: "blob", n: 0 },
+      { t: "blob", n: 0 },
+    ]);
+    const back = await db.query<{ d: unknown }>("SELECT d FROM e ORDER BY k");
+    for (const { d } of back) {
+      expect(d).toBeInstanceOf(Uint8Array);
+      expect((d as Uint8Array).byteLength).toBe(0);
+    }
+    await db.close();
+  });
+
   it("rejects a typed array bound as a BLOB, as the driver must pass an ArrayBuffer", () => {
     const storage = newFakeDoStorage();
     try {

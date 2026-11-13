@@ -14,6 +14,7 @@ export const PROBE_EXPECTATIONS: Record<string, "ok" | RegExp> = {
   blob1900k: "ok",
   blob2500k: /too big/,
   blobReadsAsArrayBuffer: "ok",
+  emptyBlobIsBlob: "ok",
   string1900k: "ok",
   string2500k: /too big/,
 };
@@ -84,6 +85,15 @@ export function probeDoSqlite(storage: DoSqlStorage): Record<string, string> {
     const value = run("SELECT d FROM probe_b WHERE k = 1")[0]?.d;
     if (!(value instanceof ArrayBuffer)) {
       throw new Error(`read back ${Object.prototype.toString.call(value)}`);
+    }
+  });
+  probe("emptyBlobIsBlob", () => {
+    // An empty ArrayBuffer is a zero-length BLOB, not NULL (formats tell "empty" from "absent").
+    run("INSERT INTO probe_b VALUES (3, ?)", new ArrayBuffer(0));
+    const row = run("SELECT typeof(d) AS t, length(d) AS n, d FROM probe_b WHERE k = 3")[0];
+    if (row?.t !== "blob" || row.n !== 0) throw new Error(`stored ${row?.t} of length ${row?.n}`);
+    if (!(row.d instanceof ArrayBuffer) || row.d.byteLength !== 0) {
+      throw new Error(`read back ${Object.prototype.toString.call(row.d)}`);
     }
   });
   return out;

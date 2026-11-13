@@ -14,6 +14,12 @@ const NOT_AUTHORIZED = /^\s*(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|PRAGMA)
  * read as ArrayBuffer, and bound strings (UTF-8 bytes) and BLOBs at most ~2 MB. `transaction` runs the closure between BEGIN and
  * COMMIT/ROLLBACK and, like the platform, does not queue concurrent calls.
  */
+/**
+ * An empty view over a real buffer. node:sqlite (Node 22) binds a view whose buffer has no backing
+ * store, such as `new Uint8Array(new ArrayBuffer(0))`, as NULL; the platform stores an empty BLOB.
+ */
+const EMPTY_BLOB = new Uint8Array(1).subarray(0, 0);
+
 export function newFakeDoStorage(): FakeDoStorage {
   const db = new DatabaseSync(":memory:");
   const bind = (value: unknown): SQLInputValue => {
@@ -24,7 +30,7 @@ export function newFakeDoStorage(): FakeDoStorage {
     if (typeof value === "string" && Buffer.byteLength(value) > MAX_VALUE_BYTES) throw tooBig();
     if (value instanceof ArrayBuffer) {
       if (value.byteLength > MAX_VALUE_BYTES) throw tooBig();
-      return new Uint8Array(value);
+      return value.byteLength === 0 ? EMPTY_BLOB : new Uint8Array(value);
     }
     return value as SQLInputValue;
   };

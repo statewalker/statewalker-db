@@ -18,7 +18,7 @@ export type Db = {
   close(): Promise<void>;
 };
 
-/** Options accepted by every `newXxxDuckDb` factory. */
+/** Options accepted by every driver factory (`newNodeSqliteDb`, `newNodeDuckDb`, …). */
 export type DbOptions = {
   /** File path (node) or OPFS path (browser). Omit for in-memory. */
   path?: string;

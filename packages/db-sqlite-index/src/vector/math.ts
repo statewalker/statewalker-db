@@ -77,13 +77,6 @@ export function distanceInt8(
   return metric === "cosine" ? 1 - s : -s;
 }
 
-export function dequantizeInt8(codes: Int8Array, co: number, scale: number, d: number) {
-  const out = new Float32Array(d);
-  const f = scale / 127;
-  for (let i = 0; i < d; i++) out[i] = codes[co + i] * f;
-  return out;
-}
-
 // ------------------------------------------------------------ 1-bit
 
 export const wordsFor = (d: number) => (d + 31) >>> 5;

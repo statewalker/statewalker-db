@@ -1,5 +1,6 @@
 import type { Db } from "@statewalker/db-api";
 import { inTransaction } from "@statewalker/db-sqlite";
+import { PREFIX_PATTERN } from "../prefix.js";
 import { distance, prepare, TopK } from "./math.js";
 import {
   type BuiltSegment,
@@ -101,7 +102,7 @@ export class VectorIndex {
   #epoch = 0;
 
   constructor(opts: VectorIndexOptions) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(opts.prefix)) {
+    if (!PREFIX_PATTERN.test(opts.prefix)) {
       throw new Error(`vector-index: bad prefix ${opts.prefix}`);
     }
     if (!Number.isInteger(opts.dims) || opts.dims < 1) {
@@ -576,8 +577,7 @@ function assertId(id: number) {
 
 /** Drops every table of the index under `prefix`, in one transaction. Needs no dims or metric. */
 export async function dropVectorIndex(db: Db, prefix: string): Promise<void> {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(prefix))
-    throw new Error(`vector-index: bad prefix ${prefix}`);
+  if (!PREFIX_PATTERN.test(prefix)) throw new Error(`vector-index: bad prefix ${prefix}`);
   await inTransaction(db, async (tx) => {
     for (const t of ["meta", "ids", "tail", "centroids", "seg", "f32"]) {
       await tx.exec(`DROP TABLE IF EXISTS ${prefix}${t}`);

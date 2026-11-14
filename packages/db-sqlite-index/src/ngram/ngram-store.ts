@@ -1,5 +1,6 @@
 import type { Db } from "@statewalker/db-api";
 import { inTransaction } from "@statewalker/db-sqlite";
+import { PREFIX_PATTERN } from "../prefix.js";
 import { type GramBackend, type NgramItem, newFts5Backend } from "./fts5-backend.js";
 import { chunkJson } from "./json-chunks.js";
 import { planQuery } from "./plan-query.js";
@@ -40,8 +41,8 @@ export class NgramStore {
   readonly #backend: GramBackend;
 
   constructor({ db, prefix, store = "fts5" }: NgramStoreOptions) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(prefix)) {
-      throw new Error(`ngram: prefix "${prefix}" must match /^[A-Za-z_][A-Za-z0-9_]*$/`);
+    if (!PREFIX_PATTERN.test(prefix)) {
+      throw new Error(`ngram: prefix "${prefix}" must match ${PREFIX_PATTERN}`);
     }
     if (store !== "fts5" && store !== "postings")
       throw new Error(`ngram: unknown store "${store}"`);

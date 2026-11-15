@@ -74,6 +74,15 @@ describe("newNodeDuckDb", () => {
       expect(Number(cast[0]?.ms)).toBe(date.getTime());
     });
 
+    it("still binds ISO strings into TIMESTAMPTZ[]", async () => {
+      db = await newNodeDuckDb();
+      const rows = await db.query<{ ms: bigint | number }>(
+        "SELECT epoch_ms(($1::TIMESTAMPTZ[])[1]) AS ms",
+        [["2024-01-02T03:04:05.678Z"]],
+      );
+      expect(Number(rows[0]?.ms)).toBe(Date.UTC(2024, 0, 2, 3, 4, 5, 678));
+    });
+
     it("rejects an invalid Date with a clear error", async () => {
       db = await newNodeDuckDb();
       await expect(db.query("SELECT $1::TIMESTAMP AS d", [new Date(Number.NaN)])).rejects.toThrow(

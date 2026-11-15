@@ -63,6 +63,10 @@ await db.close();
   `FLOAT[3]` or `INTEGER[]` column and `$1::FLOAT[3]` works. An empty array
   needs a known list type: a `LIST` column or a cast such as `$1::INTEGER[]`.
   Other `@duckdb/node-api` values (`DuckDBValue`) pass through unchanged.
+  A `Date` keeps its instant in a `TIMESTAMPTZ` position only when DuckDB reports
+  the parameter's type. It does not for a cast array subscripted in the same
+  expression (`($1::TIMESTAMPTZ[2])[1]`): there, the Date binds as `TIMESTAMP` and
+  is read in the session time zone. Bind into a column or cast without the subscript.
 - **One statement per `query`.** `query` rejects SQL holding several
   statements (`query() runs one statement, ...`) instead of returning only the
   first one's rows; run scripts with `exec`.

@@ -88,7 +88,7 @@ function bindParams(prepared: DuckDBPreparedStatement, params: unknown[]): void 
     if (isListLike(param)) {
       // Dates bound into TIMESTAMPTZ[] must be instants too, not TIMESTAMPs cast in the session
       // time zone: bind with the statement's type and TIMESTAMPTZ items.
-      const tzType = timestampTzListType(prepared, index);
+      const tzType = onlyDates(param) ? timestampTzListType(prepared, index) : undefined;
       if (tzType) {
         prepared.bindValue(index, toDuckDBValue(param, true), tzType);
         continue;
@@ -110,6 +110,20 @@ function bindParams(prepared: DuckDBPreparedStatement, params: unknown[]): void 
     }
     prepared.bindValue(index, toDuckDBValue(param));
   }
+}
+
+/** Whether a (nested) list holds at least one Date and nothing else but nulls. */
+function onlyDates(list: ListLike): boolean {
+  let dates = 0;
+  const visit = (items: ListLike): boolean => {
+    for (const item of Array.from(items)) {
+      if (item === null || item === undefined) continue;
+      if (item instanceof Date) dates++;
+      else if (!isListLike(item) || !visit(item)) return false;
+    }
+    return true;
+  };
+  return visit(list) && dates > 0;
 }
 
 /**

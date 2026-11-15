@@ -104,6 +104,8 @@ export class VectorIndex {
   #retired: SegmentIndex[] = [];
   #queue: Promise<unknown> = Promise.resolve();
   #maintaining = false;
+  /** The running compact() or merge(), for refresh() to wait on. */
+  #maintenanceRun: Promise<unknown> | null = null;
   #ready = false;
   /** Bumped before and after each commit that changes the segment list: odd while one runs. */
   #epoch = 0;
@@ -159,26 +161,41 @@ export class VectorIndex {
     this.#ready = true;
   }
 
-  /** Reloads state, tail and segments from storage (e.g. after another writer changed them). */
+  /**
+   * Reloads state, tail and segments from storage (e.g. after another writer changed them).
+   * Waits for a running compact() or merge() and runs between writes, so it never mixes the
+   * state before a commit with the rows after it (#26).
+   */
   async refresh(): Promise<void> {
-    const [row] = await this.#db.query<{ v: string }>(
-      `SELECT v FROM ${this.#t.meta} WHERE k = 'state'`,
-    );
-    const state: State = row ? JSON.parse(row.v) : { seq: 0, nextGen: 1, segments: [] };
+    for (;;) {
+      while (this.#maintenanceRun) await this.#maintenanceRun.catch(() => {});
+      const done = await this.#exclusive(async () => {
+        if (this.#maintaining) return false; // one started while we queued: wait for it too
+        const [row] = await this.#db.query<{ v: string }>(
+          `SELECT v FROM ${this.#t.meta} WHERE k = 'state'`,
+        );
+        const state: State = row ? JSON.parse(row.v) : { seq: 0, nextGen: 1, segments: [] };
 
-    const tail = new Map<number, TailEntry>();
-    const rows = await this.#db.query<{ id: number; seq: number; vec: Uint8Array }>(
-      `SELECT id, seq, vec FROM ${this.#t.tail}`,
-    );
-    for (const r of rows) tail.set(Number(r.id), { seq: Number(r.seq), vector: toFloat32(r.vec) });
+        const tail = new Map<number, TailEntry>();
+        const rows = await this.#db.query<{ id: number; seq: number; vec: Uint8Array }>(
+          `SELECT id, seq, vec FROM ${this.#t.tail}`,
+        );
+        for (const r of rows)
+          tail.set(Number(r.id), { seq: Number(r.seq), vector: toFloat32(r.vec) });
 
-    const known = new Map(this.#segments.map((s) => [s.gen, s]));
-    const segments = await Promise.all(
-      state.segments.map((s) => known.get(s.gen) ?? this.#store.open(s, this.metric)),
-    );
-    this.#state = state;
-    this.#tail = tail;
-    this.#segments = segments;
+        const known = new Map(this.#segments.map((s) => [s.gen, s]));
+        const segments = await Promise.all(
+          state.segments.map((s) => known.get(s.gen) ?? this.#store.open(s, this.metric)),
+        );
+        await this.#swapSegments(async () => {
+          this.#state = state;
+          this.#tail = tail;
+          this.#segments = segments;
+        });
+        return true;
+      });
+      if (done) return;
+    }
   }
 
   get stats(): VectorIndexStats {
@@ -604,11 +621,16 @@ export class VectorIndex {
   async #maintenance<T>(fn: () => Promise<T>): Promise<T> {
     if (this.#maintaining) throw new Error("vector-index: compact or merge already running");
     this.#maintaining = true;
-    try {
-      return await fn();
-    } finally {
-      this.#maintaining = false;
-    }
+    const run = (async () => {
+      try {
+        return await fn();
+      } finally {
+        this.#maintaining = false;
+        this.#maintenanceRun = null;
+      }
+    })();
+    this.#maintenanceRun = run;
+    return run;
   }
 
   #assertReady() {

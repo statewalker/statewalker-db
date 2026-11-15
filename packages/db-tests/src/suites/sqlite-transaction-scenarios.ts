@@ -281,6 +281,87 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
     },
   },
   {
+    name: "a parameter SQLite cannot bind rejects with its index and type, and nothing runs",
+    async run(db) {
+      await setup(db);
+      const unsupported: [string, unknown][] = [
+        ["Object", {}],
+        ["Map", new Map()],
+        ["Array", [1, 2]],
+        ["function", () => 1],
+        ["symbol", Symbol("s")],
+        ["Object", Object.create(null)],
+        ["String", new String("boxed")],
+      ];
+      const attempts: [string, number, () => Promise<unknown>][] = [];
+      for (const [type, value] of unsupported) {
+        // First: node:sqlite would take a leading object as named parameters and shift the rest.
+        attempts.push([
+          `${type} first`,
+          1,
+          () => db.query("INSERT INTO t (k, b) VALUES (?, ?)", [value, "x"]),
+        ]);
+        attempts.push([
+          `${type} second`,
+          2,
+          () => db.query("INSERT INTO t (k, b) VALUES (?, ?)", ["x", value]),
+        ]);
+        attempts.push([
+          `${type} first in tx`,
+          1,
+          () =>
+            inTransaction(db, (tx) => tx.query("INSERT INTO t (k, b) VALUES (?, ?)", [value, "x"])),
+        ]);
+      }
+      for (const [label, index, attempt] of attempts) {
+        let caught: unknown;
+        try {
+          await attempt();
+        } catch (error) {
+          caught = error;
+        }
+        const type = label.split(" ")[0] as string;
+        check(
+          caught instanceof TypeError,
+          `${label} rejected with a TypeError: ${errorText(caught)}`,
+        );
+        check(
+          new RegExp(`parameter ${index}\\b`).test(errorText(caught)) &&
+            errorText(caught).includes(type),
+          `${label} names parameter ${index} and ${type}: ${errorText(caught)}`,
+        );
+      }
+      check((await count(db)) === 0, `nothing was written, found ${await count(db)} rows`);
+    },
+  },
+  {
+    name: "an ArrayBuffer and any ArrayBuffer view bind as a BLOB of exactly their bytes",
+    async run(db) {
+      await setup(db);
+      const backing = new Uint8Array([9, 1, 2, 3, 4, 9]).buffer;
+      const inputs: [string, unknown][] = [
+        ["ArrayBuffer", new Uint8Array([1, 2, 3, 4]).buffer],
+        ["Uint8Array slice", new Uint8Array(backing, 1, 4)],
+        ["DataView", new DataView(backing, 1, 4)],
+        ["Int8Array", new Int8Array(backing, 1, 4)],
+        ["Uint16Array", new Uint16Array(new Uint8Array([1, 2, 3, 4]).buffer)],
+      ];
+      for (const [k, value] of inputs) {
+        await db.query("INSERT INTO t (k, b) VALUES (?, ?)", [k, value]);
+      }
+      await inTransaction(db, (tx) =>
+        tx.query("INSERT INTO t (k, b) VALUES (?, ?)", ["tx ArrayBuffer", inputs[0]?.[1]]),
+      );
+      const rows = await db.query<{ k: string; b: unknown }>("SELECT k, b FROM t ORDER BY id");
+      check(rows.length === inputs.length + 1, `${rows.length} rows written`);
+      for (const row of rows) {
+        check(row.b instanceof Uint8Array, `${row.k} read back as a Uint8Array`);
+        const got = Array.from(row.b as Uint8Array).join();
+        check(got === "1,2,3,4", `${row.k} bound as ${got}`);
+      }
+    },
+  },
+  {
     name: "integers above 2^53 round-trip as bigint, safe integers come back as numbers",
     async run(db) {
       await db.exec("CREATE TABLE g (k INTEGER PRIMARY KEY, v INTEGER)");

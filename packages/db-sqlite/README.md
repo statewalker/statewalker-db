@@ -39,10 +39,13 @@ sees the call (on the Db and on the `tx` handle alike):
 | `undefined` parameter | binds `NULL` |
 | `Date` parameter | binds its ISO 8601 UTC text, `date.toISOString()` (`"2026-01-02T03:04:05.006Z"`), which SQLite date functions read; an invalid Date rejects with `db-sqlite: parameter N is an invalid Date` |
 | `bigint` parameter | binds as an integer |
+| `null`, `number`, `string` parameter | binds as given (an integer-valued number as an integer, any other as a real) |
+| `ArrayBuffer`, or any ArrayBuffer view (`Uint8Array`, `DataView`, `Float32Array`, …) parameter | binds a BLOB of exactly the view's bytes (`byteOffset` to `byteOffset + byteLength`) |
+| any other parameter: a plain object, `Map`, array, function, symbol, boxed primitive (`new String(…)`) | rejects with a `TypeError`, `db-sqlite: parameter N has type <type>, which SQLite cannot bind; …`, and nothing runs. node:sqlite would otherwise read a leading object as named parameters and bind the rest one place to the left. SQLite has no array type: bind a list as JSON text, `JSON.stringify(ids)`, and read it with `json_each(?)` |
 | integer in a result | a `number` within ±(2^53 - 1), a `bigint` beyond, so no value loses precision |
 
 A trailing `;`, comments, and semicolons inside literals or a `CREATE TRIGGER … BEGIN … END` body
-do not count as a second statement. Other parameter types go to the engine unchanged.
+do not count as a second statement. Parameter indexes in messages count from 1.
 
 ## Examples
 

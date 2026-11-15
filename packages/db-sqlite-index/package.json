@@ -22,12 +22,14 @@
     "./vector": {
       "source": "./src/vector/index.ts",
       "types": "./dist/vector.d.mts",
-      "import": "./dist/vector.mjs"
+      "import": "./dist/vector.mjs",
+      "default": "./dist/vector.mjs"
     },
     "./ngram": {
       "source": "./src/ngram/index.ts",
       "types": "./dist/ngram.d.mts",
-      "import": "./dist/ngram.mjs"
+      "import": "./dist/ngram.mjs",
+      "default": "./dist/ngram.mjs"
     }
   },
   "files": [

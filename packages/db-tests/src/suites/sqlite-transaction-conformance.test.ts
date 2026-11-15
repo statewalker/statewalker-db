@@ -9,7 +9,10 @@ runSqliteTransactionConformance(async () => {
       // Integers as bigint, so one above 2^53 is read exactly; db-sqlite turns safe ones into numbers.
       const statement = db.prepare(sql);
       statement.setReadBigInts(true);
-      return statement.all(...(params as SQLInputValue[])) as Record<string, unknown>[];
+      const bound = params.map((v) =>
+        typeof v === "number" && Number.isSafeInteger(v) ? BigInt(v) : (v as SQLInputValue),
+      );
+      return statement.all(...bound) as Record<string, unknown>[];
     },
     exec: (sql) => db.exec(sql),
     close: () => db.close(),

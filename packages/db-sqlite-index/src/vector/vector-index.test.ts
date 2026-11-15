@@ -61,6 +61,28 @@ for (const [name, open] of Object.entries(BACKENDS)) {
       });
     }
 
+    // Issue #67: 4200 vectors in 3 clusters auto-compact into ~65 small lists; neighbours spread
+    // over many of them, and probing 8 lists gave recall@10 of about 0.70 at default settings.
+    for (const metric of ["cosine", "l2"] as const) {
+      it(`auto-compacted small lists keep recall at default settings (${metric})`, async () => {
+        const db = await open();
+        const index = new VectorIndex({ db, prefix: "vec_", dims: D, metric });
+        await index.init();
+        const items = dataset(4200, 41, D, 3);
+        await index.upsert(items); // reaches the default autoCompactAt (4096) in the last batch
+        expect(index.stats.tail).toBe(0);
+        expect(index.stats.segments.map((s) => s.count)).toEqual([4200]);
+        expect(index.stats.segments[0]?.nlist).toBeGreaterThan(32);
+        const approx = await recall(index, items, metric);
+        console.log(
+          `  ${name} ${metric} auto-compacted 3 clusters: recall@10=${approx.toFixed(3)}`,
+        );
+        expect(approx).toBeGreaterThanOrEqual(0.9);
+        // An explicit nprobe keeps its meaning: 8 lists are still too few here.
+        expect(await recall(index, items, metric, { nprobe: 8 })).toBeLessThan(0.9);
+      });
+    }
+
     it("deletes and overwrites hide segment copies; merge drops them", async () => {
       const { index, db } = await setup();
       const items = dataset(2000, 3);

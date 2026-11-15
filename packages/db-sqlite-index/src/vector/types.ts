@@ -8,7 +8,10 @@ export interface SearchHit {
 
 export interface SearchOptions {
   k?: number;
-  /** IVF lists probed per segment. Default 8. */
+  /**
+   * IVF lists probed per segment, exactly. Default: at least 8, more until the
+   * probed lists hold 16 × k × oversample rows (small lists after auto-compaction).
+   */
   nprobe?: number;
   /** Candidates kept per probed list by the 1-bit filter = k * oversample. Default 8. */
   oversample?: number;

@@ -41,10 +41,13 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@electric-sql/pglite": "catalog:",
     "@statewalker/db-api": "workspace:^"
   },
+  "peerDependencies": {
+    "@electric-sql/pglite": "catalog:peers"
+  },
   "devDependencies": {
+    "@electric-sql/pglite": "catalog:",
     "@electric-sql/pglite-pgvector": "catalog:",
     "@statewalker/db-tests": "workspace:^",
     "@types/node": "catalog:",

@@ -1,5 +1,5 @@
 import type { Db } from "@statewalker/db-api";
-import { NgramStore } from "./ngram-store.js";
+import { NgramStore } from "../src/ngram/ngram-store.js";
 
 const check = (ok: boolean, message: string) => {
   if (!ok) throw new Error(`ngram smoke: ${message}`);
@@ -11,7 +11,7 @@ const indexed = async (index: NgramStore, pattern: string) =>
 
 const ids = (result: { hits: { id: number }[] }) => result.hits.map((h) => h.id).join();
 
-/** Run inside a real Durable Object by db-sqlite-do's `pnpm test:do`. */
+/** Run inside a real Durable Object by `pnpm test:do` (test-do/scenarios.ts). */
 export const ngramDoScenarios = (["fts5", "postings"] as const).map((store) => ({
   name: `ngram (${store}): upsert, overwrite, lone surrogate, drop inside a transaction`,
   async run(db: Db) {

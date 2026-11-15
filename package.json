@@ -21,7 +21,7 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "test:browser": "pnpm --filter @statewalker/db-sqlite-browser --filter @statewalker/db-duckdb-browser test:browser",
-    "test:do": "pnpm -r run build && pnpm --filter @statewalker/db-sqlite-do test:do",
+    "test:do": "pnpm -r run build && pnpm -r --workspace-concurrency 1 --if-present run test:do",
     "test:nightly": "status=0; pnpm run test:browser || status=1; pnpm run test:do || status=1; exit $status",
     "typecheck": "pnpm -r run typecheck",
     "typecheck:tests": "pnpm -r run typecheck:tests",

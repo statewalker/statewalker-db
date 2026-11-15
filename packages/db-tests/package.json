@@ -20,18 +20,15 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./sqlite-transaction-scenarios": "./src/suites/sqlite-transaction-scenarios.ts"
+    "./sqlite-transaction-scenarios": "./src/suites/sqlite-transaction-scenarios.ts",
+    "./celld-dev": "./src/do/celld-dev.ts"
   },
   "files": [
-    "dist",
     "src"
   ],
   "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit",
-    "clean": "rimraf dist",
     "lint": "biome check --write .",
     "format": "biome format --write ."
   },
@@ -44,8 +41,6 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "rimraf": "catalog:",
-    "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

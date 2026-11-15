@@ -323,6 +323,15 @@ ignores it.
 - Dependencies: `@statewalker/db-api`, `@statewalker/db-sqlite`. The planner, fold
   and trigram code import neither.
 
+## How it is tested against a real Durable Object
+
+`pnpm test` runs every suite on `node:sqlite` and on `@statewalker/db-sqlite-do`'s
+`node:sqlite` fake. `pnpm test:do` (from the repository root, after a build) starts `celld dev`
+on `packages/db-sqlite-index/test-do/` and runs the smoke scenarios of `test-do/scenarios.ts`
+(multi-part segment rows, a 150-id delete, the n-gram stores' writes and drops inside a
+transaction) inside a real Durable Object. It needs celld 0.6.x on `PATH`. The scenarios live
+outside `src/`, so they are not published.
+
 ## License
 
 MIT

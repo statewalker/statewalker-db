@@ -9,6 +9,14 @@ export type FakeDoStorage = DoSqlStorage & { close(): void };
  */
 const EMPTY_BLOB = new Uint8Array(1).subarray(0, 0);
 
+/** Integers read as numbers, as on the platform; one above 2^53 stays a bigint (unprobed there). */
+const fromInteger = (value: unknown): unknown =>
+  typeof value === "bigint" &&
+  value >= BigInt(Number.MIN_SAFE_INTEGER) &&
+  value <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(value)
+    : value;
+
 /** Limits probed on celld's DO SQLite (see test-do/platform-probe.ts). */
 const MAX_BOUND_PARAMETERS = 100;
 const MAX_VALUE_BYTES = 2_000_000;
@@ -46,12 +54,15 @@ export function newFakeDoStorage(): FakeDoStorage {
         let rows: Record<string, unknown>[] = [];
         // prepare() compiles only the first statement: run row-less, parameter-less text with exec().
         if (bindings.length === 0 && statement.columns().length === 0) db.exec(query);
-        else rows = statement.all(...bindings.map(bind)) as Record<string, unknown>[];
+        else {
+          statement.setReadBigInts(true); // an integer above 2^53 reads back exactly, as a bigint
+          rows = statement.all(...bindings.map(bind)) as Record<string, unknown>[];
+        }
         const out = rows.map((row) =>
           Object.fromEntries(
             Object.entries(row).map(([key, value]) => [
               key,
-              value instanceof Uint8Array ? value.slice().buffer : value,
+              value instanceof Uint8Array ? value.slice().buffer : fromInteger(value),
             ]),
           ),
         );

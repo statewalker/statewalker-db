@@ -47,11 +47,13 @@ await db.close();
 - **Calls are queued.** The Db runs one call at a time in call order, and opens transactions
   with `BEGIN IMMEDIATE` (see `@statewalker/db-sqlite`). `node:sqlite` is synchronous, so a long
   statement blocks the event loop while it runs.
-- **`query` runs one statement.** Anything after the first `;` is ignored without an error;
-  use `exec` for multi-statement scripts.
+- **`query` runs one statement.** SQL with a second statement rejects before anything runs, and
+  empty SQL rejects; `true`/`false`, `undefined` and `Date` parameters bind as `1`/`0`, `NULL` and
+  ISO 8601 text. All of it comes from `@statewalker/db-sqlite`, the same on every SQLite driver.
+  Use `exec` for multi-statement scripts.
 - **Rows are plain objects with a `null` prototype**, BLOBs are `Uint8Array`, integers are
-  JavaScript numbers: reading an integer above 2^53 rejects the whole query with `Value is too
-  large to be represented as a JavaScript number: 9007199254740993`.
+  JavaScript numbers, except one above 2^53 (or below -2^53), which comes back as an exact
+  `bigint`. Statements read integers with `setReadBigInts(true)`.
 - **Errors are `node:sqlite`'s.** A path in a missing directory rejects with
   `unable to open database file`; bad SQL rejects with `near "...": syntax error`; a call after
   `close()` rejects with `db-sqlite: the database is closed`.

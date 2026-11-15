@@ -23,6 +23,7 @@
     "test:browser": "pnpm --filter @statewalker/db-sqlite-browser --filter @statewalker/db-duckdb-browser test:browser",
     "test:do": "pnpm -r run build && pnpm --filter @statewalker/db-sqlite-do test:do",
     "typecheck": "pnpm -r run typecheck",
+    "typecheck:tests": "pnpm -r run typecheck:tests",
     "lint": "biome check --write .",
     "lint:check": "biome check .",
     "format": "biome format --write .",

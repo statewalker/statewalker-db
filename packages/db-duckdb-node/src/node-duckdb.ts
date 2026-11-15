@@ -17,6 +17,8 @@ import {
   LIST,
   listValue,
   TIMESTAMP,
+  TIMESTAMPTZ,
+  timestampTZValue,
   timestampValue,
   VARCHAR,
 } from "@duckdb/node-api";
@@ -93,8 +95,31 @@ function bindParams(prepared: DuckDBPreparedStatement, params: unknown[]): void 
         continue;
       }
     }
+    if (param instanceof Date && parameterTypeId(prepared, index) === DuckDBTypeId.TIMESTAMP_TZ) {
+      // A TIMESTAMP is cast to TIMESTAMPTZ in the session time zone, which would shift the
+      // instant by the local offset: bind the instant itself.
+      prepared.bindValue(index, timestampTZValue(dateMicros(param)), TIMESTAMPTZ);
+      continue;
+    }
     prepared.bindValue(index, toDuckDBValue(param));
   }
+}
+
+function parameterTypeId(prepared: DuckDBPreparedStatement, index: number) {
+  try {
+    return prepared.parameterType(index).typeId;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Microseconds since the epoch; an invalid `Date` throws. */
+function dateMicros(value: Date): bigint {
+  const millis = value.getTime();
+  if (Number.isNaN(millis)) {
+    throw new TypeError("Invalid Date passed as a query parameter.");
+  }
+  return BigInt(millis) * 1000n;
 }
 
 function listParameterType(prepared: DuckDBPreparedStatement, index: number) {
@@ -142,7 +167,8 @@ function isListLike(value: unknown): value is ListLike {
 
 /**
  * Map JS values DuckDB cannot type on its own: `Uint8Array` to BLOB, `Date`
- * to TIMESTAMP (microseconds since the epoch, UTC), arrays and non-byte typed
+ * to TIMESTAMP (microseconds since the epoch, UTC; `bindParams` binds TIMESTAMPTZ
+ * where the statement expects one), arrays and non-byte typed
  * arrays to LIST (recursively). Everything else is bound as is.
  */
 function toDuckDBValue(value: unknown): DuckDBValue {
@@ -150,11 +176,7 @@ function toDuckDBValue(value: unknown): DuckDBValue {
     return blobValue(value);
   }
   if (value instanceof Date) {
-    const millis = value.getTime();
-    if (Number.isNaN(millis)) {
-      throw new TypeError("Invalid Date passed as a query parameter.");
-    }
-    return timestampValue(BigInt(millis) * 1000n);
+    return timestampValue(dateMicros(value));
   }
   if (isListLike(value)) {
     return listValue(Array.from(value, toDuckDBValue));

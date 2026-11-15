@@ -56,7 +56,7 @@ await db.close();
   | `bigint` | `HUGEINT` |
   | `string` | `VARCHAR` |
   | `Uint8Array` (and `Buffer`) | `BLOB` |
-  | `Date` | `TIMESTAMP` (UTC, microsecond precision); an invalid `Date` throws |
+  | `Date` | `TIMESTAMP` (UTC, microsecond precision), or `TIMESTAMPTZ` where the statement expects one, so the instant is kept whatever the session time zone; an invalid `Date` throws |
   | array, or a non-byte typed array such as `Float32Array` | `LIST`, recursively; the item type comes from all items, so `[0, 0.5]` is `DOUBLE[]` |
 
   DuckDB casts these to the column or the cast type, so an array binds into a

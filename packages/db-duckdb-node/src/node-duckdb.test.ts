@@ -46,6 +46,19 @@ describe("newNodeDuckDb", () => {
       expect(rows[0]?.y).toBe(2024);
     });
 
+    it("binds a Date into a TIMESTAMPTZ column as the same instant, whatever the time zone", async () => {
+      db = await newNodeDuckDb();
+      // A TIMESTAMP cast to TIMESTAMPTZ is read in the session time zone: not UTC here.
+      await db.exec("SET TimeZone = 'America/New_York'");
+      await db.exec("CREATE TABLE tz (d TIMESTAMPTZ)");
+      const date = new Date(Date.UTC(2024, 0, 2, 3, 4, 5, 678));
+      await db.query("INSERT INTO tz VALUES ($1)", [date]);
+      const rows = await db.query<{ ms: bigint | number }>("SELECT epoch_ms(d) AS ms FROM tz");
+      expect(Number(rows[0]?.ms)).toBe(date.getTime());
+      const found = await db.query("SELECT 1 AS hit FROM tz WHERE d = $1", [date]);
+      expect(found).toHaveLength(1);
+    });
+
     it("rejects an invalid Date with a clear error", async () => {
       db = await newNodeDuckDb();
       await expect(db.query("SELECT $1::TIMESTAMP AS d", [new Date(Number.NaN)])).rejects.toThrow(

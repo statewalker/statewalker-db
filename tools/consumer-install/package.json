@@ -14,9 +14,12 @@
   "homepage": "https://github.com/statewalker/statewalker-db/tree/main/tools/consumer-install#readme",
   "type": "module",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
   }
 }

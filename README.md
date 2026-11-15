@@ -66,9 +66,10 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
   `exec`.
 - **Packages export `dist/`, not TypeScript.** Node.js refuses to strip types
   from files under `node_modules`, so a raw `./src/index.ts` entry fails for
-  any consumer without a bundler. Each `exports` entry has `types` and `import`
-  pointing at `dist/`, plus a `source` condition pointing at `src/` for bundlers
-  that ask for it. Packages ship `src/` as well.
+  any consumer without a bundler. Each `exports` entry has `types`, `import` and
+  `default` pointing at `dist/` (`default` lets CommonJS code `require()` the ESM
+  build on Node 20.19+ and 22.12+), plus a `source` condition pointing at `src/`
+  for bundlers that ask for it. Packages ship `src/` as well.
 - **`prepack` runs the build.** `pnpm pack` and publishing therefore never
   package a stale `dist/`.
 - **One conformance suite, parameterized.** The engines differ in the

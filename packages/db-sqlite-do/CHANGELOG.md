@@ -1,5 +1,16 @@
 # @statewalker/db-sqlite-do
 
+## 0.1.3
+
+### Patch Changes
+
+- a1a5c00: README: the real-DO conformance run skips the `runDbConformance` scenarios its HTTP/JSON harness cannot carry (call order, close during a call, BLOB and bigint round trips); they run on the fake.
+- Updated dependencies [a1a5c00]
+- Updated dependencies [a1a5c00]
+- Updated dependencies [e70e7fd]
+  - @statewalker/db-api@0.1.7
+  - @statewalker/db-sqlite@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes

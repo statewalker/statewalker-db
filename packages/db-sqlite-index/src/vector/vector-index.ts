@@ -1,6 +1,6 @@
 import type { Db } from "@statewalker/db-api";
-import { inTransaction } from "@statewalker/db-sqlite";
 import { PREFIX_PATTERN } from "../prefix.js";
+import { dropCatalog, GenerationCatalog } from "./catalog.js";
 import { distance, prepare, TopK } from "./math.js";
 import {
   type BuiltSegment,
@@ -10,13 +10,7 @@ import {
   SegmentIndex,
 } from "./segment.js";
 import { type SegmentRef, SqlSegmentStore } from "./sql-segment-store.js";
-import {
-  float32Bytes,
-  type Metric,
-  type SearchHit,
-  type SearchOptions,
-  toFloat32,
-} from "./types.js";
+import type { Metric, SearchHit, SearchOptions } from "./types.js";
 
 export interface VectorIndexOptions {
   db: Db;
@@ -48,19 +42,6 @@ export interface VectorIndexStats {
   seq: number;
 }
 
-interface State {
-  seq: number;
-  nextGen: number;
-  segments: SegmentRef[];
-}
-
-interface TailEntry {
-  seq: number;
-  vector: Float32Array;
-}
-
-/** Ids per lookup (bound as one JSON parameter). */
-const VALIDATE_BATCH = 2000;
 /** Lists probed per segment when the caller passes no `nprobe`. */
 const DEFAULT_NPROBE = 8;
 /**
@@ -84,26 +65,27 @@ const WRITE_BATCH = 200;
  *   into one, dropping dead rows.
  *
  * One writer per database is assumed (a Durable Object, a worker, one tab);
- * within an instance, writes are serialized.
+ * within an instance, writes are serialized. The tables, the committed state and
+ * the in-memory tail belong to the generation catalog (`catalog.ts`); this class decides
+ * what to commit and when, builds segments and searches them.
  */
 export class VectorIndex {
   readonly dims: number;
   readonly metric: Metric;
   /** `{prefix}ids`: its `id` column holds exactly the live ids. Callers may join it in SQL. */
   readonly idTable: string;
-  readonly #db: Db;
   readonly #store: SqlSegmentStore;
+  readonly #catalog: GenerationCatalog;
   readonly #nlist?: (n: number) => number;
   readonly #autoCompactAt: number;
-  readonly #t: { meta: string; ids: string; tail: string };
 
-  #state: State = { seq: 0, nextGen: 1, segments: [] };
-  #tail = new Map<number, TailEntry>();
   #segments: SegmentIndex[] = [];
   #refs = new Map<SegmentIndex, number>();
   #retired: SegmentIndex[] = [];
   #queue: Promise<unknown> = Promise.resolve();
   #maintaining = false;
+  /** The running compact() or merge(), for refresh() to wait on. */
+  #maintenanceRun: Promise<unknown> | null = null;
   #ready = false;
   /** Bumped before and after each commit that changes the segment list: odd while one runs. */
   #epoch = 0;
@@ -117,75 +99,54 @@ export class VectorIndex {
     }
     this.dims = opts.dims;
     this.metric = opts.metric ?? "cosine";
-    this.#db = opts.db;
     this.#store = new SqlSegmentStore(opts.db, opts.prefix, opts.dims, opts.cacheBytes);
+    this.#catalog = new GenerationCatalog(opts.db, opts.prefix, this.#store);
     this.#nlist = opts.nlist;
     this.#autoCompactAt = opts.autoCompactAt ?? 4096;
-    const p = opts.prefix;
-    this.#t = { meta: `${p}meta`, ids: `${p}ids`, tail: `${p}tail` };
-    this.idTable = this.#t.ids;
+    this.idTable = this.#catalog.idTable;
   }
 
   // ------------------------------------------------------------ lifecycle
 
   /** Creates tables if missing, loads state and sweeps rows of crashed maintenance. */
   async init(): Promise<void> {
-    const { meta, ids, tail } = this.#t;
-    for (const s of [
-      `CREATE TABLE IF NOT EXISTS ${meta}(k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
-      `CREATE TABLE IF NOT EXISTS ${ids}(id INTEGER PRIMARY KEY, gen INTEGER NOT NULL)`,
-      `CREATE INDEX IF NOT EXISTS ${ids}_gen ON ${ids}(gen)`,
-      `CREATE TABLE IF NOT EXISTS ${tail}(id INTEGER PRIMARY KEY, seq INTEGER NOT NULL, vec BLOB NOT NULL)`,
-      `CREATE INDEX IF NOT EXISTS ${tail}_seq ON ${tail}(seq)`,
-      ...this.#store.schema(),
-    ]) {
-      await this.#db.exec(s);
-    }
-
-    const config = JSON.stringify({ dims: this.dims, metric: this.metric });
-    await this.#db.query(
-      `INSERT INTO ${meta}(k, v) VALUES ('config', ?) ON CONFLICT(k) DO NOTHING`,
-      [config],
-    );
-    const [stored] = await this.#db.query<{ v: string }>(
-      `SELECT v FROM ${meta} WHERE k = 'config'`,
-    );
-    if (stored?.v !== config) {
-      throw new Error(`vector-index: tables were created with ${stored?.v}, not ${config}`);
-    }
+    await this.#catalog.create(JSON.stringify({ dims: this.dims, metric: this.metric }));
     await this.refresh();
-    const live = this.#state.segments.map((s) => s.gen);
-    await inTransaction(this.#db, (tx) => this.#store.sweep(tx, live));
+    await this.#catalog.sweep();
     this.#ready = true;
   }
 
-  /** Reloads state, tail and segments from storage (e.g. after another writer changed them). */
+  /**
+   * Reloads state, tail and segments from storage (e.g. after another writer changed them).
+   * Waits for a running compact() or merge() and runs between writes, so it never mixes the
+   * state before a commit with the rows after it (#26).
+   */
   async refresh(): Promise<void> {
-    const [row] = await this.#db.query<{ v: string }>(
-      `SELECT v FROM ${this.#t.meta} WHERE k = 'state'`,
-    );
-    const state: State = row ? JSON.parse(row.v) : { seq: 0, nextGen: 1, segments: [] };
-
-    const tail = new Map<number, TailEntry>();
-    const rows = await this.#db.query<{ id: number; seq: number; vec: Uint8Array }>(
-      `SELECT id, seq, vec FROM ${this.#t.tail}`,
-    );
-    for (const r of rows) tail.set(Number(r.id), { seq: Number(r.seq), vector: toFloat32(r.vec) });
-
-    const known = new Map(this.#segments.map((s) => [s.gen, s]));
-    const segments = await Promise.all(
-      state.segments.map((s) => known.get(s.gen) ?? this.#store.open(s, this.metric)),
-    );
-    this.#state = state;
-    this.#tail = tail;
-    this.#segments = segments;
+    for (;;) {
+      while (this.#maintenanceRun) await this.#maintenanceRun.catch(() => {});
+      const done = await this.#exclusive(async () => {
+        if (this.#maintaining) return false; // one started while we queued: wait for it too
+        const snapshot = await this.#catalog.read();
+        const known = new Map(this.#segments.map((s) => [s.gen, s]));
+        const segments = await Promise.all(
+          snapshot.state.segments.map((s) => known.get(s.gen) ?? this.#store.open(s, this.metric)),
+        );
+        await this.#swapSegments(async () => {
+          this.#catalog.adopt(snapshot);
+          this.#segments = segments;
+        });
+        return true;
+      });
+      if (done) return;
+    }
   }
 
   get stats(): VectorIndexStats {
+    const { state, tail } = this.#catalog;
     return {
-      tail: this.#tail.size,
-      segments: this.#state.segments.map((s) => ({ ...s })),
-      seq: this.#state.seq,
+      tail: tail.size,
+      segments: state.segments.map((s) => ({ ...s })),
+      seq: state.seq,
     };
   }
 
@@ -197,53 +158,18 @@ export class VectorIndex {
       assertId(it.id);
       return { id: it.id, vector: prepare(it.vector, this.dims, this.metric) };
     });
-    const { tail, ids } = this.#t;
     for (let i = 0; i < prepared.length; i += WRITE_BATCH) {
       const batch = prepared.slice(i, i + WRITE_BATCH);
-      await this.#exclusive(async () => {
-        const seq = this.#state.seq + 1;
-        const next = { ...this.#state, seq };
-        await inTransaction(this.#db, async (tx) => {
-          for (const { id, vector } of batch) {
-            await tx.query(
-              `INSERT INTO ${tail}(id, seq, vec) VALUES (?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET seq = excluded.seq, vec = excluded.vec`,
-              [id, seq, float32Bytes(vector)],
-            );
-            await tx.query(
-              `INSERT INTO ${ids}(id, gen) VALUES (?, 0) ON CONFLICT(id) DO UPDATE SET gen = 0`,
-              [id],
-            );
-          }
-          await this.#saveState(tx, next);
-        });
-        this.#state = next;
-        for (const { id, vector } of batch) this.#tail.set(id, { seq, vector });
-      });
-      if (this.#tail.size >= this.#autoCompactAt && !this.#maintaining) await this.compact();
+      await this.#exclusive(() => this.#catalog.append(batch));
+      if (this.#catalog.tail.size >= this.#autoCompactAt && !this.#maintaining)
+        await this.compact();
     }
   }
 
   async delete(ids: number[]): Promise<void> {
     this.#assertReady();
     ids.forEach(assertId);
-    await this.#exclusive(async () => {
-      for (let i = 0; i < ids.length; i += VALIDATE_BATCH) {
-        const chunk = ids.slice(i, i + VALIDATE_BATCH);
-        const json = JSON.stringify(chunk);
-        await inTransaction(this.#db, async (tx) => {
-          await tx.query(
-            `DELETE FROM ${this.#t.tail} WHERE id IN (SELECT value FROM json_each(?))`,
-            [json],
-          );
-          await tx.query(
-            `DELETE FROM ${this.#t.ids} WHERE id IN (SELECT value FROM json_each(?))`,
-            [json],
-          );
-        });
-        for (const id of chunk) this.#tail.delete(id);
-      }
-    });
+    await this.#exclusive(() => this.#catalog.remove(ids));
   }
 
   // ------------------------------------------------------------ search
@@ -268,7 +194,7 @@ export class VectorIndex {
       opts.signal?.throwIfAborted();
       // Tail: exact, from memory.
       const tailTop = new TopK<number>(k);
-      for (const [id, { vector }] of this.#tail) {
+      for (const [id, { vector }] of this.#catalog.tail) {
         if (filter && !filter(id)) continue;
         tailTop.push(distance(this.metric, q, 0, vector, 0, d), id);
       }
@@ -300,7 +226,7 @@ export class VectorIndex {
         const rounds = pending.map((p) => {
           // Tail ids are never live in a segment; known-dead rows are skipped too.
           const keep = (id: number) =>
-            !this.#tail.has(id) &&
+            !this.#catalog.tail.has(id) &&
             !(gens.has(id) && gens.get(id) !== p.seg.gen) &&
             (!filter || filter(id));
           return { p, cands: p.seg.filterList(q, p.list, p.data, p.limit, keep) };
@@ -309,7 +235,7 @@ export class VectorIndex {
           .flatMap((r) => r.cands.map((c) => c.id))
           .filter((id) => !gens.has(id));
         if (unknown.length > 0) {
-          const found = await this.#generations(unknown);
+          const found = await this.#catalog.generations(unknown);
           for (const id of unknown) gens.set(id, found.get(id));
           opts.signal?.throwIfAborted();
         }
@@ -360,11 +286,11 @@ export class VectorIndex {
     ids.forEach(assertId);
     return this.#read(async (segments) => {
       const out = new Map<number, Float32Array>();
-      const gens = await this.#generations(ids);
+      const gens = await this.#catalog.generations(ids);
       const wanted = new Map<number, Set<number>>(); // gen -> ids
       for (const [id, gen] of gens) {
         if (gen === 0) {
-          const entry = this.#tail.get(id);
+          const entry = this.#catalog.tail.get(id);
           if (entry) out.set(id, entry.vector.slice());
           continue;
         }
@@ -399,8 +325,8 @@ export class VectorIndex {
     this.#assertReady();
     return this.#maintenance(async () => {
       const snapshot = await this.#exclusive(async () => ({
-        maxSeq: this.#state.seq,
-        entries: [...this.#tail.entries()],
+        maxSeq: this.#catalog.state.seq,
+        entries: [...this.#catalog.tail.entries()],
       }));
       if (snapshot.entries.length === 0) return 0;
 
@@ -415,26 +341,9 @@ export class VectorIndex {
 
       await this.#exclusive(() =>
         this.#swapSegments(async () => {
-          const ref = this.#refOf(built, n);
-          const next: State = {
-            ...this.#state,
-            nextGen: ref.gen + 1,
-            segments: [...this.#state.segments, ref],
-          };
-          const { ids: idsT, tail } = this.#t;
-          await inTransaction(this.#db, async (tx) => {
-            await this.#store.write(tx, ref.gen, built);
-            await tx.query(
-              `UPDATE ${idsT} SET gen = ? WHERE gen = 0
-             AND id IN (SELECT id FROM ${tail} WHERE seq <= ?)`,
-              [ref.gen, snapshot.maxSeq],
-            );
-            await tx.query(`DELETE FROM ${tail} WHERE seq <= ?`, [snapshot.maxSeq]);
-            await this.#saveState(tx, next);
+          await this.#catalog.seal(snapshot.maxSeq, built, n, (ref) => {
+            this.#segments = [...this.#segments, this.#segmentOf(ref, built)];
           });
-          this.#state = next;
-          for (const [id, e] of this.#tail) if (e.seq <= snapshot.maxSeq) this.#tail.delete(id);
-          this.#segments = [...this.#segments, this.#segmentOf(ref, built)];
         }),
       );
       return n;
@@ -459,7 +368,7 @@ export class VectorIndex {
           if (seg.counts[c] === 0) continue;
           const [data] = (await this.#store.lists(seg, [c])) as [ListData];
           const floats = await this.#store.floats(seg, c);
-          const live = await this.#generations(Array.from(data.ids));
+          const live = await this.#catalog.generations(Array.from(data.ids));
           for (let r = 0; r < data.ids.length; r++) {
             const id = data.ids[r];
             if (live.get(id) !== seg.gen) continue;
@@ -478,29 +387,13 @@ export class VectorIndex {
 
       await this.#exclusive(() =>
         this.#swapSegments(async () => {
-          const ref = built ? this.#refOf(built, n) : null;
-          const kept = this.#state.segments.filter((s) => !oldGens.includes(s.gen));
-          const next: State = {
-            ...this.#state,
-            nextGen: ref ? ref.gen + 1 : this.#state.nextGen,
-            segments: ref ? [...kept, ref] : kept,
-          };
-          await inTransaction(this.#db, async (tx) => {
-            if (ref && built) {
-              await this.#store.write(tx, ref.gen, built);
-              await tx.query(
-                `UPDATE ${this.#t.ids} SET gen = ? WHERE gen IN (SELECT value FROM json_each(?))`,
-                [ref.gen, JSON.stringify(oldGens)],
-              );
-            }
-            await this.#saveState(tx, next);
+          await this.#catalog.replace(oldGens, built, n, (ref) => {
+            this.#segments = [
+              ...this.#segments.filter((s) => !oldGens.includes(s.gen)),
+              ...(ref && built ? [this.#segmentOf(ref, built)] : []),
+            ];
+            this.#retired.push(...old);
           });
-          this.#state = next;
-          this.#segments = [
-            ...this.#segments.filter((s) => !oldGens.includes(s.gen)),
-            ...(ref && built ? [this.#segmentOf(ref, built)] : []),
-          ];
-          this.#retired.push(...old);
         }),
       );
       await this.#reap();
@@ -526,33 +419,8 @@ export class VectorIndex {
     });
   }
 
-  #refOf(built: BuiltSegment, count: number): SegmentRef {
-    return { gen: this.#state.nextGen, count, nlist: built.nlist };
-  }
-
   #segmentOf(ref: SegmentRef, built: BuiltSegment): SegmentIndex {
     return new SegmentIndex(ref.gen, this.dims, this.metric, built.centroids, built.counts);
-  }
-
-  async #generations(ids: number[]): Promise<Map<number, number>> {
-    const out = new Map<number, number>();
-    const unique = [...new Set(ids)];
-    for (let i = 0; i < unique.length; i += VALIDATE_BATCH) {
-      const rows = await this.#db.query<{ id: number; gen: number }>(
-        `SELECT id, gen FROM ${this.#t.ids} WHERE id IN (SELECT value FROM json_each(?))`,
-        [JSON.stringify(unique.slice(i, i + VALIDATE_BATCH))],
-      );
-      for (const r of rows) out.set(Number(r.id), Number(r.gen));
-    }
-    return out;
-  }
-
-  async #saveState(tx: Db, state: State): Promise<void> {
-    await tx.query(
-      `INSERT INTO ${this.#t.meta}(k, v) VALUES ('state', ?)
-       ON CONFLICT(k) DO UPDATE SET v = excluded.v`,
-      [JSON.stringify(state)],
-    );
   }
 
   /** Deletes the rows of retired segments once no search is reading them. */
@@ -561,8 +429,7 @@ export class VectorIndex {
     if (ready.length === 0) return;
     this.#retired = this.#retired.filter((s) => !ready.includes(s));
     for (const s of ready) this.#refs.delete(s);
-    const gens = ready.map((s) => s.gen);
-    await inTransaction(this.#db, (tx) => this.#store.drop(tx, gens));
+    await this.#catalog.dropGenerations(ready.map((s) => s.gen));
   }
 
   /**
@@ -604,11 +471,16 @@ export class VectorIndex {
   async #maintenance<T>(fn: () => Promise<T>): Promise<T> {
     if (this.#maintaining) throw new Error("vector-index: compact or merge already running");
     this.#maintaining = true;
-    try {
-      return await fn();
-    } finally {
-      this.#maintaining = false;
-    }
+    const run = (async () => {
+      try {
+        return await fn();
+      } finally {
+        this.#maintaining = false;
+        this.#maintenanceRun = null;
+      }
+    })();
+    this.#maintenanceRun = run;
+    return run;
   }
 
   #assertReady() {
@@ -624,9 +496,5 @@ function assertId(id: number) {
 /** Drops every table of the index under `prefix`, in one transaction. Needs no dims or metric. */
 export async function dropVectorIndex(db: Db, prefix: string): Promise<void> {
   if (!PREFIX_PATTERN.test(prefix)) throw new Error(`vector-index: bad prefix ${prefix}`);
-  await inTransaction(db, async (tx) => {
-    for (const t of ["meta", "ids", "tail", "centroids", "seg", "f32"]) {
-      await tx.exec(`DROP TABLE IF EXISTS ${prefix}${t}`);
-    }
-  });
+  await dropCatalog(db, prefix);
 }

@@ -6,9 +6,10 @@ import { SQLITE_TRANSACTION, type SqliteTransactionHook } from "./sqlite-transac
 /**
  * The synchronous engine a SQLite driver wraps. `all` returns rows (BLOBs as Uint8Array; integers
  * as numbers or bigints, which the wrapper turns into numbers when they are safe) and is given
- * exactly one non-empty statement and parameters already normalised (no boolean, undefined or
- * Date); `exec` runs every statement of a non-empty string. `transaction`, when present, replaces
- * `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` (Durable Objects forbid them in SQL).
+ * exactly one non-empty statement and parameters already normalised and checked (only null,
+ * number, bigint, string and Uint8Array); `exec` runs every statement of a non-empty string.
+ * `transaction`, when present, replaces `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` (Durable Objects
+ * forbid them in SQL).
  */
 export type SqliteEngine = {
   all(sql: string, params: unknown[]): Record<string, unknown>[];
@@ -29,8 +30,23 @@ function checkSql(sql: string, one: boolean): void {
   if (one && count === "many") throw new Error(MANY_STATEMENTS);
 }
 
-/** boolean → 1/0, undefined → NULL, Date → ISO 8601 UTC text; anything else is left as given. */
+/** The type a rejected parameter is named by: `symbol`, `function`, or the object's class. */
+function typeName(value: unknown): string {
+  if (typeof value !== "object" || value === null) return typeof value;
+  const name = (value as { constructor?: { name?: unknown } }).constructor?.name;
+  return typeof name === "string" && name ? name : "Object";
+}
+
+/**
+ * boolean → 1/0, undefined → NULL, Date → ISO 8601 UTC text, ArrayBuffer or any ArrayBuffer view →
+ * a Uint8Array over exactly its bytes; null, number, bigint and string are left as given. Anything
+ * else (a plain object, Map, array, function, symbol, boxed primitive) rejects: node:sqlite would
+ * take a leading object as named parameters and bind the rest one place to the left, and SQLite
+ * has no array type (bind a list as JSON text and read it with `json_each`).
+ */
 function toSqliteParam(value: unknown, index: number): unknown {
+  if (value === null || typeof value === "string" || typeof value === "number") return value;
+  if (typeof value === "bigint") return value;
   if (typeof value === "boolean") return value ? 1 : 0;
   if (value === undefined) return null;
   if (value instanceof Date) {
@@ -39,7 +55,22 @@ function toSqliteParam(value: unknown, index: number): unknown {
     }
     return value.toISOString();
   }
-  return value;
+  // node:sqlite (Node 22) binds a view over a buffer with no backing store (any zero-length
+  // ArrayBuffer) as NULL: give an empty value a fresh empty Uint8Array, which binds as a BLOB.
+  if ((ArrayBuffer.isView(value) || value instanceof ArrayBuffer) && value.byteLength === 0) {
+    return new Uint8Array(1).subarray(0, 0);
+  }
+  if (value instanceof Uint8Array && value.constructor === Uint8Array) return value;
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  const hint = Array.isArray(value) ? "; bind a list as JSON text and read it with json_each" : "";
+  throw new TypeError(
+    `db-sqlite: parameter ${index + 1} has type ${typeName(value)}, which SQLite cannot bind; ` +
+      "pass null, undefined, a boolean, number, bigint, string, Date, ArrayBuffer or " +
+      `ArrayBuffer view${hint}`,
+  );
 }
 
 function runAll(engine: SqliteEngine, sql: string, params: unknown[]): Record<string, unknown>[] {
@@ -58,7 +89,7 @@ function runExec(engine: SqliteEngine, sql: string): void {
  * call order; `close()` waits for earlier calls; later calls reject with
  * `db-sqlite: the database is closed`; closing twice is a no-op) and the `inTransaction` hook.
  * Every SQLite driver gets the same input handling here: empty SQL rejects, `query` rejects a
- * second statement, parameters are normalised and safe integers come back as numbers. The `tx`
+ * second statement, parameters are normalised (one SQLite cannot bind rejects) and safe integers come back as numbers. The `tx`
  * handed to a transaction callback bypasses the queue, has no hook (so nesting is rejected) and
  * rejects once its transaction has finished.
  */

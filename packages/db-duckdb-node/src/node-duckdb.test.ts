@@ -59,6 +59,21 @@ describe("newNodeDuckDb", () => {
       expect(found).toHaveLength(1);
     });
 
+    it("binds Dates inside a list into TIMESTAMPTZ[] as the same instants", async () => {
+      db = await newNodeDuckDb();
+      await db.exec("SET TimeZone = 'America/New_York'");
+      await db.exec("CREATE TABLE ta (x TIMESTAMPTZ[])");
+      const date = new Date(Date.UTC(2024, 0, 2, 3, 4, 5, 678));
+      await db.query("INSERT INTO ta VALUES ($1)", [[date, date]]);
+      const rows = await db.query<{ ms: bigint | number }>("SELECT epoch_ms(x[2]) AS ms FROM ta");
+      expect(Number(rows[0]?.ms)).toBe(date.getTime());
+      const cast = await db.query<{ ms: bigint | number }>(
+        "SELECT epoch_ms(($1::TIMESTAMPTZ[])[1]) AS ms",
+        [[date]],
+      );
+      expect(Number(cast[0]?.ms)).toBe(date.getTime());
+    });
+
     it("rejects an invalid Date with a clear error", async () => {
       db = await newNodeDuckDb();
       await expect(db.query("SELECT $1::TIMESTAMP AS d", [new Date(Number.NaN)])).rejects.toThrow(

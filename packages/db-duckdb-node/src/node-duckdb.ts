@@ -86,6 +86,13 @@ function bindParams(prepared: DuckDBPreparedStatement, params: unknown[]): void 
     const param = params[i];
     const index = i + 1;
     if (isListLike(param)) {
+      // Dates bound into TIMESTAMPTZ[] must be instants too, not TIMESTAMPs cast in the session
+      // time zone: bind with the statement's type and TIMESTAMPTZ items.
+      const tzType = timestampTzListType(prepared, index);
+      if (tzType) {
+        prepared.bindValue(index, toDuckDBValue(param, true), tzType);
+        continue;
+      }
       // DuckDB infers a list's type from its first item, so `[0, 0.5]` would
       // become INTEGER[] and fail; infer it from all items instead. An empty
       // list has no items: take its type from the statement when it is known.
@@ -103,6 +110,32 @@ function bindParams(prepared: DuckDBPreparedStatement, params: unknown[]): void 
     }
     prepared.bindValue(index, toDuckDBValue(param));
   }
+}
+
+/**
+ * The statement's type for parameter `index` when it is a (nested) list or array of TIMESTAMPTZ,
+ * as nested LISTs (DuckDB casts a list into a fixed-size array); otherwise `undefined`.
+ */
+function timestampTzListType(
+  prepared: DuckDBPreparedStatement,
+  index: number,
+): DuckDBType | undefined {
+  let type: DuckDBType;
+  try {
+    type = prepared.parameterType(index);
+  } catch {
+    return undefined;
+  }
+  const rebuild = (t: DuckDBType): DuckDBType | undefined => {
+    if (t.typeId === DuckDBTypeId.LIST || t.typeId === DuckDBTypeId.ARRAY) {
+      const item = rebuild(t.valueType);
+      return item ? LIST(item) : undefined;
+    }
+    return t.typeId === DuckDBTypeId.TIMESTAMP_TZ ? TIMESTAMPTZ : undefined;
+  };
+  return type.typeId === DuckDBTypeId.LIST || type.typeId === DuckDBTypeId.ARRAY
+    ? rebuild(type)
+    : undefined;
 }
 
 function parameterTypeId(prepared: DuckDBPreparedStatement, index: number) {
@@ -171,15 +204,16 @@ function isListLike(value: unknown): value is ListLike {
  * where the statement expects one), arrays and non-byte typed
  * arrays to LIST (recursively). Everything else is bound as is.
  */
-function toDuckDBValue(value: unknown): DuckDBValue {
+function toDuckDBValue(value: unknown, timestampTz = false): DuckDBValue {
   if (value instanceof Uint8Array) {
     return blobValue(value);
   }
   if (value instanceof Date) {
-    return timestampValue(dateMicros(value));
+    const micros = dateMicros(value);
+    return timestampTz ? timestampTZValue(micros) : timestampValue(micros);
   }
   if (isListLike(value)) {
-    return listValue(Array.from(value, toDuckDBValue));
+    return listValue(Array.from(value, (item) => toDuckDBValue(item, timestampTz)));
   }
   return value as DuckDBValue;
 }

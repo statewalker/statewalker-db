@@ -1,5 +1,5 @@
 import type { Db, DbEntry } from "@statewalker/db-api";
-import { countSqlStatements } from "./sql-statements.js";
+import { countSqlStatements, firstSqlStatement } from "./sql-statements.js";
 import { SQLITE_TRANSACTION, type SqliteTransactionHook } from "./sqlite-transaction.js";
 
 /**
@@ -68,7 +68,8 @@ function fromSqliteRows(rows: Record<string, unknown>[]): Record<string, unknown
 
 function runAll(engine: SqliteEngine, sql: string, params: unknown[]): Record<string, unknown>[] {
   checkSql(sql, true);
-  return fromSqliteRows(engine.all(sql, params.map(toSqliteParam)));
+  // Only the statement itself reaches the engine: DO SQLite rejects an empty tail ("; -- c ;").
+  return fromSqliteRows(engine.all(firstSqlStatement(sql), params.map(toSqliteParam)));
 }
 
 function runExec(engine: SqliteEngine, sql: string): void {

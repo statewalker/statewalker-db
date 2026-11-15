@@ -17,7 +17,12 @@ export function prepare(v: ArrayLike<number>, dims: number, metric: Metric): Flo
   for (let i = 0; i < f.length; i++) {
     if (!Number.isFinite(f[i])) throw new Error("vector-index: vector contains a non-finite value");
   }
-  return metric === "cosine" ? normalize(f) : f.slice();
+  if (metric !== "cosine") return f.slice();
+  const out = normalize(f);
+  if (!out.some((x) => x !== 0)) {
+    throw new Error("vector-index: a zero vector has no direction under the cosine metric");
+  }
+  return out;
 }
 
 /** Distance between two float vectors at offsets; lower is closer. */

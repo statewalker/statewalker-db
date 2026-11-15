@@ -79,8 +79,9 @@ five databases if their writes do not overlap.
   one is terminated.
 - **Calls are queued** and transactions open with `BEGIN IMMEDIATE` (see `@statewalker/db-sqlite`).
   Rows are plain objects; BLOBs are `Uint8Array`.
-- **The engine loads once per `wasmUrl`.** A failed load (for example a wrong `wasmUrl`) is not
-  retried for that URL.
+- **The engine loads once per `wasmUrl`.** A failed load (a wrong `wasmUrl`, a network error) is
+  not cached: the next call tries again. The same holds for the OPFS pool: after an open failed
+  with the OPFS lock error, a later open in the same worker works once the other worker is gone.
 - **Dependencies:** `@sqlite.org/sqlite-wasm` (the engine), `@statewalker/db-sqlite` (queue and
   transactions), `@statewalker/db-api` (types).
 

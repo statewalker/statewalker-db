@@ -23,9 +23,25 @@ const MAIN_THREAD_PATH =
 
 type InitModule = (module?: { locateFile?: (file: string) => string }) => Promise<Sqlite3Static>;
 
-/** One engine per wasmUrl, started on first use; one OPFS pool per engine. */
+/**
+ * One engine per wasmUrl, started on first use; one OPFS pool per engine. A start that fails is
+ * forgotten, so the next call tries again: the pool's install fails while another worker holds the
+ * pool, and works once that worker is gone.
+ */
 const engines = new Map<string, Promise<Sqlite3Static>>();
 const pools = new WeakMap<Sqlite3Static, Promise<SAHPoolUtil>>();
+
+/** `promise`, removed from the cache when it rejects (if it is still the cached one). */
+function forgetOnFailure<K, V>(
+  cache: { get(key: K): Promise<V> | undefined; delete(key: K): unknown },
+  key: K,
+  promise: Promise<V>,
+): Promise<V> {
+  promise.catch(() => {
+    if (cache.get(key) === promise) cache.delete(key);
+  });
+  return promise;
+}
 
 function getSqlite3(wasmUrl: string | undefined): Promise<Sqlite3Static> {
   const key = wasmUrl ?? "";
@@ -35,6 +51,7 @@ function getSqlite3(wasmUrl: string | undefined): Promise<Sqlite3Static> {
       wasmUrl ? { locateFile: (file) => (file.endsWith(".wasm") ? wasmUrl : file) } : undefined,
     );
     engines.set(key, engine);
+    forgetOnFailure(engines, key, engine);
   }
   return engine;
 }
@@ -42,8 +59,14 @@ function getSqlite3(wasmUrl: string | undefined): Promise<Sqlite3Static> {
 function getPool(sqlite3: Sqlite3Static): Promise<SAHPoolUtil> {
   let pool = pools.get(sqlite3);
   if (!pool) {
-    pool = sqlite3.installOpfsSAHPoolVfs({});
+    // sqlite-wasm caches a failed install too, unless told to try again. The option is
+    // documented and implemented by sqlite-wasm but missing from its type declarations.
+    const options = { forceReinitIfPreviouslyFailed: true } as Parameters<
+      Sqlite3Static["installOpfsSAHPoolVfs"]
+    >[0];
+    pool = sqlite3.installOpfsSAHPoolVfs(options);
     pools.set(sqlite3, pool);
+    forgetOnFailure(pools, sqlite3, pool);
   }
   return pool;
 }

@@ -88,6 +88,12 @@ the run with `celld dev was not ready within 60 s`. It stops only the celld proc
   retried rather than failed, so keep each write step small.
 - **BLOBs are converted both ways.** Typed-array parameters are bound as `ArrayBuffer`;
   `ArrayBuffer` values read back become `Uint8Array`, as on every other SQLite driver.
+- **Input handling comes from `@statewalker/db-sqlite`.** `query` rejects a second statement and
+  empty SQL before `sql.exec` sees it, and `true`/`false`, `undefined` and `Date` parameters bind
+  as `1`/`0`, `NULL` and ISO 8601 text, as on every SQLite driver. How DO SQLite itself binds a
+  `bigint` and reads an integer above 2^53 is not probed yet: the fake reads such an integer as a
+  `bigint` (as the other drivers do), and `test:do` skips that scenario
+  (`DO_UNPROBED_SCENARIOS` in `test-do/unsupported-scenarios.ts`).
 - **`close()` releases nothing.** The storage belongs to the DO. It only makes later calls on this
   Db reject with `db-sqlite: the database is closed`.
 - **Use one Db per DO.** Calls are queued inside one Db; direct `ctx.storage.sql` calls made

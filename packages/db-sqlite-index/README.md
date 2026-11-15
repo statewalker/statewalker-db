@@ -45,7 +45,10 @@ const hits = await index.search(query, { k: 10 }); // [{ id, distance }], lower 
 ```
 
 `metric` is `"cosine"` (default), `"dot"` or `"l2"`. `search` defaults to `k: 10`,
-`nprobe: 8`, `oversample: 8`, `exact: false`; it also takes an `AbortSignal` as `signal`.
+`nprobe: 8`, `oversample: 8`, `exact: false`; it also takes an `AbortSignal` as `signal`
+(an already-aborted signal rejects at once). Under `"cosine"`, `upsert` and `search` reject a
+zero vector (`vector-index: a zero vector has no direction under the cosine metric`): it has no
+direction, so it would sit at the same distance from everything.
 `upsert`, `delete`, `search`, `getVectors`, `compact`, `merge` and `optimize` reject with
 `vector-index: call init() first` until `init()` ran.
 
@@ -166,6 +169,12 @@ never modified.
   Within an instance, writes are serialised. Another writer's changes become
   visible after `refresh()`.
 - **`merge()` holds every live segment vector in memory** while it runs.
+- **Heavy deletes or overwrites call for `merge()`.** Dead segment rows stay in
+  their lists until `merge()` drops them. Search skips them, filtering a list
+  again with a doubled limit when dead rows took candidate slots, so `k` results
+  still come back; but the extra passes and liveness lookups cost time, and the
+  centroids still reflect the old data. After deleting or overwriting a large
+  share of a segment, call `merge()`.
 - **Opening existing tables with different `dims` or `metric` fails** with
   `vector-index: tables were created with {"dims":…,"metric":…}, not …`.
 - **A search or `getVectors` that overlaps a `compact()` or `merge()` commit runs

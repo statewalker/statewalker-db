@@ -1,21 +1,7 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
 import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
-
-type Table = Awaited<ReturnType<duckdb.AsyncPreparedStatement["query"]>>;
-
-/**
- * Convert an Arrow Table (returned by duckdb-wasm queries) to plain JS objects.
- */
-function arrowToObjects<T>(table: Table): T[] {
-  const fields = table.schema.fields.map((f: { name: string }) => f.name);
-  return table.toArray().map((row: Record<string, unknown>) => {
-    const obj: Record<string, unknown> = {};
-    for (const field of fields) {
-      obj[field] = row[field];
-    }
-    return obj as T;
-  });
-}
+import { arrowTableToObjects } from "./arrow-values.js";
+import { toDuckDbParams } from "./params.js";
 
 /** Browser-specific options for {@link newBrowserDuckDb}. */
 export interface BrowserDuckDbOptions extends DbOptions {
@@ -87,16 +73,18 @@ export async function newBrowserDuckDb(options?: BrowserDuckDbOptions): Promise<
   return {
     async query<T = DbEntry>(sql: string, params?: unknown[]): Promise<T[]> {
       if (params && params.length > 0) {
+        // Convert first: an unsupported param throws before a statement exists.
+        const bound = toDuckDbParams(params);
         const stmt = await conn.prepare(sql);
         try {
-          const result = await stmt.query(...params);
-          return arrowToObjects<T>(result);
+          const result = await stmt.query(...bound);
+          return arrowTableToObjects<T>(result);
         } finally {
           await stmt.close();
         }
       }
       const result = await conn.query(sql);
-      return arrowToObjects<T>(result);
+      return arrowTableToObjects<T>(result);
     },
 
     async exec(sql: string): Promise<void> {

@@ -22,7 +22,8 @@
     ".": {
       "source": "./src/index.ts",
       "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
     }
   },
   "files": [
@@ -34,7 +35,7 @@
     "build": "tsdown",
     "prepack": "pnpm run build",
     "dev": "tsdown --watch",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist",
     "lint": "biome check --write .",

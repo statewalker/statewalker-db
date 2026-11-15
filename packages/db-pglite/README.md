@@ -19,6 +19,10 @@ pnpm add @statewalker/db-pglite @electric-sql/pglite
 pnpm add @electric-sql/pglite-pgvector   # only for the pgvector example below
 ```
 
+`@electric-sql/pglite` (`^0.5.15`) is a peer dependency: install it yourself, so the driver and
+the extensions you pass share one PGlite. Pick the PGlite version your extensions are built for
+(`@electric-sql/pglite-pgvector@0.0.16` needs PGlite `0.5.15`, `0.0.17` needs `0.5.16`).
+
 | Import | Gives | Environment |
 | --- | --- | --- |
 | `@statewalker/db-pglite` | `newPgliteDb`; types `PgliteDbOptions`, `Db`, `DbEntry` | Node.js, browser |
@@ -48,7 +52,8 @@ const rows = await db.query("SELECT $1::int + 1 AS n", [41]);
   rejects this Db. Postgres runs `BEGIN ... COMMIT` as ordinary SQL inside one `exec`.
 - **After `close()`** every call rejects with `db-pglite: the database is closed`; a second
   `close()` does nothing.
-- **Dependencies:** `@electric-sql/pglite` (the engine), `@statewalker/db-api` (types).
+- **Dependencies:** `@statewalker/db-api` (types); peer `@electric-sql/pglite` (the engine,
+  provided by the caller).
 
 ## License
 

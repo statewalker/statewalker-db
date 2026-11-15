@@ -4,6 +4,8 @@ import { regexLiterals } from "./regex-literals.js";
 /** Longer patterns are rejected: a JS regex cannot be interrupted once it runs. */
 export const MAX_PATTERN_LENGTH = 1000;
 
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
 export type QueryPlan = {
   /** The pattern as a global regex (`i` added when not case-sensitive); verifies candidates. */
   regex: RegExp;
@@ -34,7 +36,12 @@ export function planQuery(
   const regex = new RegExp(source, opts.caseSensitive === false ? "gi" : "g");
   const branches: string[][] = [];
   for (const literals of regexLiterals(regex)) {
-    const usable = literals.map(fold).filter((literal) => Array.from(literal).length >= 3);
+    // Without the `u` flag a literal may hold a lone surrogate (`ab😀?`, `\uD83D`); indexed
+    // text is split by code point, so keep only the well-formed pieces around it.
+    const usable = literals
+      .flatMap((literal) => literal.split(LONE_SURROGATE))
+      .map(fold)
+      .filter((literal) => Array.from(literal).length >= 3);
     if (usable.length === 0) return { regex, branches: null };
     branches.push(usable);
   }

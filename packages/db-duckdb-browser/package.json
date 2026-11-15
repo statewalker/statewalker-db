@@ -22,13 +22,15 @@
     ".": {
       "source": "./src/index.ts",
       "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
     }
   },
   "files": [
     "dist",
     "src",
-    "!src/**/*.test.ts"
+    "!src/**/*.test.ts",
+    "!src/**/test-wasm-node.ts"
   ],
   "scripts": {
     "build": "tsdown",

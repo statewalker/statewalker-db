@@ -3,6 +3,7 @@
 // rather than with sqlite-vec — see README for why the prebuilt sqlite-vec wasm
 // was not usable. FTS5 is standard SQLite and runs in the database directly.
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
+import { RESET_SQL, SCHEMA } from "./schema.js";
 
 type Row = Record<string, unknown>;
 
@@ -97,34 +98,10 @@ async function main(): Promise<void> {
   const execRows = db.exec.bind(db) as ExecResult;
 
   // Content table. `embedding` is a plain SQLite BLOB of float32 bytes.
-  db.exec(`
-    CREATE TABLE docs (
-      id INTEGER PRIMARY KEY,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      embedding BLOB NOT NULL
-    )
-  `);
-
-  // Portable FTS5 external-content index, kept in sync by a trigger.
-  db.exec(`
-    CREATE VIRTUAL TABLE docs_fts USING fts5(
-      title,
-      body,
-      content='docs',
-      content_rowid='id'
-    )
-  `);
-
-  db.exec(`
-    CREATE TRIGGER docs_ai AFTER INSERT ON docs BEGIN
-      INSERT INTO docs_fts(rowid, title, body)
-      VALUES (new.id, new.title, new.body);
-    END
-  `);
+  for (const sql of SCHEMA) db.exec(sql);
 
   function resetData(): void {
-    db.exec(`DELETE FROM docs`);
+    db.exec(RESET_SQL);
 
     const sampleDocs: Array<[number, string, string, number[]]> = [
       [

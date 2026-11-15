@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mulberry32 } from "./kmeans.js";
 import { prepare } from "./math.js";
-import { buildSegment, MIN_TRAIN, parseList, SegmentIndex } from "./segment.js";
+import { buildSegment, MAX_WIDEN_FRACTION, MIN_TRAIN, parseList, SegmentIndex } from "./segment.js";
 
 const D = 32;
 
@@ -66,12 +66,16 @@ describe("segment codec", () => {
     expect(exact.length).toBe(4);
     expect(seg.probe(q, 4, rows(exact))).toEqual(exact); // already enough rows
 
-    const wider = seg.probe(q, 4, 1000);
+    const want = rows(exact) + 1;
+    const wider = seg.probe(q, 4, want);
     expect(wider.slice(0, 4)).toEqual(exact); // same order, extended
-    expect(rows(wider)).toBeGreaterThanOrEqual(1000);
-    expect(rows(wider.slice(0, -1))).toBeLessThan(1000); // stops at the first list that suffices
+    expect(rows(wider)).toBeGreaterThanOrEqual(want);
+    expect(rows(wider.slice(0, -1))).toBeLessThan(want); // stops at the first list that suffices
 
-    expect(seg.probe(q, 4, Number.POSITIVE_INFINITY).length).toBe(seg.nlist);
+    // A large minRows (a large k) widens to a third of the lists at most, never to all of them.
+    const capped = seg.probe(q, 4, Number.POSITIVE_INFINITY);
+    expect(capped.length).toBe(Math.max(4, Math.ceil(seg.nlist * MAX_WIDEN_FRACTION)));
+    expect(capped.length).toBeLessThan(seg.nlist);
   });
 
   it("rejects a list block of the wrong size", () => {

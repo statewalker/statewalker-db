@@ -184,6 +184,9 @@ export interface Candidate {
 }
 
 /** The in-memory part of a segment: centroids and list sizes. List blocks are fetched by the caller. */
+/** The share of a segment's lists that {@link SegmentIndex.probe} may widen to for `minRows`. */
+export const MAX_WIDEN_FRACTION = 1 / 3;
+
 export class SegmentIndex {
   constructor(
     readonly gen: number,
@@ -200,9 +203,12 @@ export class SegmentIndex {
   /**
    * The non-empty lists closest to the query, in centroid order: at least the
    * `nprobe` nearest, then more until the probed lists hold `minRows` rows (or
-   * none are left). `minRows` 0 probes exactly `nprobe` lists.
+   * none are left). `minRows` 0 probes exactly `nprobe` lists. The widening
+   * stops at a third of the lists ({@link MAX_WIDEN_FRACTION}), so a large `k`
+   * never turns a search into a scan of every list.
    */
   probe(query: Float32Array, nprobe: number, minRows = 0): number[] {
+    const maxLists = Math.max(nprobe, Math.ceil(this.nlist * MAX_WIDEN_FRACTION));
     const m: Metric = this.metric === "l2" ? "l2" : "dot";
     const scored: { d: number; c: number }[] = [];
     for (let c = 0; c < this.nlist; c++) {
@@ -213,7 +219,7 @@ export class SegmentIndex {
     const out: number[] = [];
     let rows = 0;
     for (const { c } of scored) {
-      if (out.length >= nprobe && rows >= minRows) break;
+      if (out.length >= nprobe && (rows >= minRows || out.length >= maxLists)) break;
       out.push(c);
       rows += this.counts[c];
     }

@@ -224,6 +224,185 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
     },
   },
   {
+    name: "a COMMIT that fails on a deferred foreign key rolls back and rejects",
+    async run(db) {
+      await db.exec("PRAGMA foreign_keys = ON");
+      await db.exec(
+        "CREATE TABLE parent (id INTEGER PRIMARY KEY); " +
+          "CREATE TABLE child (id INTEGER PRIMARY KEY, " +
+          "p INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED)",
+      );
+      let caught: unknown;
+      try {
+        await inTransaction(db, async (tx) => {
+          // Deferred: the statement succeeds, the violation is found only at COMMIT.
+          await tx.query("INSERT INTO child (p) VALUES (99)");
+          return "committed";
+        });
+      } catch (error) {
+        caught = error;
+      }
+      check(/foreign key/i.test(errorText(caught)), `COMMIT rejected: ${errorText(caught)}`);
+      const rows = await db.query<{ n: number }>("SELECT count(*) AS n FROM child");
+      check(Number(rows[0]?.n) === 0, "the failed transaction is rolled back");
+      await inTransaction(db, async (tx) => {
+        await tx.query("INSERT INTO parent (id) VALUES (1)");
+        await tx.query("INSERT INTO child (p) VALUES (1)");
+      });
+      const after = await db.query<{ n: number }>("SELECT count(*) AS n FROM child");
+      check(Number(after[0]?.n) === 1, "the next transaction commits");
+    },
+  },
+  {
+    name: "boolean, undefined and Date parameters bind as 1/0, NULL and an ISO 8601 string",
+    async run(db) {
+      await db.exec("CREATE TABLE p (k TEXT, a, b, c, d)");
+      const date = new Date(Date.UTC(2026, 0, 2, 3, 4, 5, 6));
+      await db.query("INSERT INTO p VALUES (?, ?, ?, ?, ?)", ["x", true, false, undefined, date]);
+      const [row] = await db.query<Record<string, unknown>>(
+        "SELECT a, b, c, typeof(c) AS tc, d, datetime(d) AS dt FROM p",
+      );
+      check(row?.a === 1, `true bound as ${String(row?.a)}`);
+      check(row?.b === 0, `false bound as ${String(row?.b)}`);
+      check(row?.c === null && row?.tc === "null", `undefined bound as ${String(row?.tc)}`);
+      check(row?.d === "2026-01-02T03:04:05.006Z", `Date bound as ${String(row?.d)}`);
+      check(row?.dt === "2026-01-02 03:04:05", `SQLite reads the date: ${String(row?.dt)}`);
+      const [inTx] = await inTransaction(db, (tx) =>
+        tx.query<Record<string, unknown>>("SELECT ? AS k, ? AS t, ? AS u", ["y", true, undefined]),
+      );
+      check(inTx?.t === 1 && inTx?.u === null, "the transaction handle normalises too");
+      let invalid: unknown;
+      try {
+        await db.query("SELECT ?, ?", ["z", new Date(Number.NaN)]);
+      } catch (error) {
+        invalid = error;
+      }
+      check(/invalid date/i.test(errorText(invalid)), `invalid Date: ${errorText(invalid)}`);
+    },
+  },
+  {
+    name: "integers above 2^53 round-trip as bigint, safe integers come back as numbers",
+    async run(db) {
+      await db.exec("CREATE TABLE g (k INTEGER PRIMARY KEY, v INTEGER)");
+      const values = [2n ** 60n, -(2n ** 60n), 9007199254740993n, 5n];
+      for (const [k, v] of values.entries()) {
+        await db.query("INSERT INTO g (k, v) VALUES (?, ?)", [k, v]);
+      }
+      const rows = await db.query<{ v: unknown }>("SELECT v FROM g ORDER BY k");
+      const got = rows.map((r) => r.v);
+      check(got[0] === 2n ** 60n, `2^60 read back as ${typeof got[0]} ${String(got[0])}`);
+      check(got[1] === -(2n ** 60n), `-2^60 read back as ${typeof got[1]} ${String(got[1])}`);
+      check(got[2] === 9007199254740993n, `2^53+1 read back as ${String(got[2])}`);
+      check(got[3] === 5, `a safe bigint parameter read back as ${typeof got[3]}`);
+      const [literal] = await db.query<Record<string, unknown>>(
+        "SELECT 9007199254740993 AS big, 9007199254740991 AS safe, count(*) AS n FROM g",
+      );
+      check(literal?.big === 9007199254740993n, `literal read back as ${typeof literal?.big}`);
+      check(
+        literal?.safe === 9007199254740991,
+        `MAX_SAFE_INTEGER read back as ${typeof literal?.safe}`,
+      );
+      check(literal?.n === 4, `count(*) read back as ${typeof literal?.n}`);
+    },
+  },
+  {
+    name: "query and exec on a plain Db run in call order",
+    async run(db) {
+      const order: string[] = [];
+      const step = (label: string) => () => {
+        order.push(label);
+      };
+      const calls = [
+        db.exec("CREATE TABLE o (n INTEGER)").then(step("create")),
+        db.query("INSERT INTO o VALUES (1)").then(step("insert 1")),
+        db.exec("INSERT INTO o VALUES (2)").then(step("insert 2")),
+        db
+          .query<{ n: number }>("SELECT n FROM o ORDER BY n")
+          .then((rows) => order.push(`select ${rows.map((r) => r.n).join()}`)),
+        db.exec("DELETE FROM o WHERE n = 1").then(step("delete 1")),
+        db
+          .query<{ n: number }>("SELECT count(*) AS n FROM o")
+          .then((rows) => order.push(`count ${rows[0]?.n}`)),
+      ];
+      await Promise.all(calls);
+      const want = "create|insert 1|insert 2|select 1,2|delete 1|count 1";
+      check(order.join("|") === want, `ran as ${order.join("|")}`);
+    },
+  },
+  {
+    name: "query rejects SQL with more than one statement and runs none of it",
+    async run(db) {
+      await db.exec("CREATE TABLE ms (n INTEGER)");
+      for (const [sql, params] of [
+        ["INSERT INTO ms VALUES (1); INSERT INTO ms VALUES (2); SELECT 7 AS z", []],
+        ["INSERT INTO ms VALUES (?); SELECT 1", [1]],
+        ["INSERT INTO ms VALUES (3);\n-- comment\nINSERT INTO ms VALUES (4)", []],
+      ] as [string, unknown[]][]) {
+        let caught: unknown;
+        try {
+          await db.query(sql, params);
+        } catch (error) {
+          caught = error;
+        }
+        check(/one statement/i.test(errorText(caught)), `${sql} rejected: ${errorText(caught)}`);
+      }
+      const rows = await db.query<{ n: number }>("SELECT count(*) AS n FROM ms");
+      check(Number(rows[0]?.n) === 0, `no statement ran, found ${rows[0]?.n} rows`);
+      // One statement with an empty tail, or with semicolons inside literals, comments or a
+      // trigger body, is still one statement.
+      const one = await db.query<Record<string, unknown>>(
+        "SELECT 'a;b' AS [c;d] /* ; */ ; -- trailing ; comment\n ;",
+      );
+      check(one.length === 1 && one[0]?.["c;d"] === "a;b", "one statement with a tail runs");
+      await db.query(
+        "CREATE TRIGGER ms_double AFTER INSERT ON ms WHEN new.n < 10 BEGIN " +
+          "INSERT INTO ms VALUES (new.n * 10); SELECT CASE WHEN 1 THEN 1 END; END;",
+      );
+      await db.query("INSERT INTO ms VALUES (?)", [2]);
+      const after = await db.query<{ n: number }>("SELECT n FROM ms ORDER BY n");
+      check(after.map((r) => r.n).join() === "2,20", "the trigger created by query fires");
+    },
+  },
+  {
+    name: "query and exec reject empty SQL with a clear message",
+    async run(db) {
+      const attempts: [string, () => Promise<unknown>][] = [
+        ["query('')", () => db.query("")],
+        ["query(' ')", () => db.query("  \n\t")],
+        ["query(';')", () => db.query(" ; ;")],
+        ["query(comment)", () => db.query("-- nothing here\n/* or here */")],
+        ["exec('')", () => db.exec("")],
+        ["exec(' ')", () => db.exec("  \n")],
+      ];
+      for (const [label, attempt] of attempts) {
+        let caught: unknown;
+        try {
+          await attempt();
+        } catch (error) {
+          caught = error;
+        }
+        check(/empty/i.test(errorText(caught)), `${label} rejected: ${errorText(caught)}`);
+      }
+      const rows = await db.query<{ x: number }>("SELECT 1 AS x");
+      check(rows[0]?.x === 1, "the Db is still usable");
+    },
+  },
+  {
+    name: "close can be called more than once",
+    async run(db) {
+      await db.close();
+      await db.close();
+      await Promise.all([db.close(), db.close()]);
+      let caught: unknown;
+      try {
+        await db.query("SELECT 1");
+      } catch (error) {
+        caught = error;
+      }
+      check(/closed/i.test(errorText(caught)), `a call after close rejects: ${errorText(caught)}`);
+    },
+  },
+  {
     name: "close waits for a running transaction to finish",
     async run(db) {
       await setup(db);

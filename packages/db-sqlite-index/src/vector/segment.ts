@@ -197,15 +197,27 @@ export class SegmentIndex {
     return this.counts.length;
   }
 
-  /** The `nprobe` non-empty lists whose centroids are closest to the query. */
-  probe(query: Float32Array, nprobe: number): number[] {
+  /**
+   * The non-empty lists closest to the query, in centroid order: at least the
+   * `nprobe` nearest, then more until the probed lists hold `minRows` rows (or
+   * none are left). `minRows` 0 probes exactly `nprobe` lists.
+   */
+  probe(query: Float32Array, nprobe: number, minRows = 0): number[] {
     const m: Metric = this.metric === "l2" ? "l2" : "dot";
-    const top = new TopK<number>(Math.min(nprobe, this.nlist));
+    const scored: { d: number; c: number }[] = [];
     for (let c = 0; c < this.nlist; c++) {
       if (this.counts[c] === 0) continue;
-      top.push(distance(m, query, 0, this.centroids, c * this.dims, this.dims), c);
+      scored.push({ d: distance(m, query, 0, this.centroids, c * this.dims, this.dims), c });
     }
-    return top.sorted().map((e) => e.item);
+    scored.sort((a, b) => a.d - b.d || a.c - b.c);
+    const out: number[] = [];
+    let rows = 0;
+    for (const { c } of scored) {
+      if (out.length >= nprobe && rows >= minRows) break;
+      out.push(c);
+      rows += this.counts[c];
+    }
+    return out;
   }
 
   /**

@@ -55,6 +55,25 @@ describe("segment codec", () => {
     expect(best.id).toBe(1);
   });
 
+  it("probes nprobe lists, then more in centroid order until they hold minRows rows", () => {
+    const { ids, vectors } = clustered(3000, 3);
+    const built = buildSegment({ dims: D, metric: "cosine", ids, vectors });
+    const seg = new SegmentIndex(1, D, "cosine", built.centroids, built.counts);
+    const q = vectors.subarray(0, D);
+    const rows = (lists: number[]) => lists.reduce((n, c) => n + (built.counts[c] as number), 0);
+
+    const exact = seg.probe(q, 4);
+    expect(exact.length).toBe(4);
+    expect(seg.probe(q, 4, rows(exact))).toEqual(exact); // already enough rows
+
+    const wider = seg.probe(q, 4, 1000);
+    expect(wider.slice(0, 4)).toEqual(exact); // same order, extended
+    expect(rows(wider)).toBeGreaterThanOrEqual(1000);
+    expect(rows(wider.slice(0, -1))).toBeLessThan(1000); // stops at the first list that suffices
+
+    expect(seg.probe(q, 4, Number.POSITIVE_INFINITY).length).toBe(seg.nlist);
+  });
+
   it("rejects a list block of the wrong size", () => {
     expect(() => parseList(new Uint8Array(10), 3, D)).toThrow(/list block has 10 bytes/);
   });

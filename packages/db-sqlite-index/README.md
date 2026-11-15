@@ -45,7 +45,9 @@ const hits = await index.search(query, { k: 10 }); // [{ id, distance }], lower 
 ```
 
 `metric` is `"cosine"` (default), `"dot"` or `"l2"`. `search` defaults to `k: 10`,
-`nprobe: 8`, `oversample: 8`, `exact: false`; it also takes an `AbortSignal` as `signal`
+`oversample: 8`, `exact: false`, and probes at least 8 lists per segment, more when lists are
+small (see [Search narrows candidates three times](#search-narrows-candidates-three-times));
+an explicit `nprobe` probes exactly that many. It also takes an `AbortSignal` as `signal`
 (an already-aborted signal rejects at once). Under `"cosine"`, `upsert` and `search` reject a
 zero vector (`vector-index: a zero vector has no direction under the cosine metric`): it has no
 direction, so it would sit at the same distance from everything.
@@ -122,7 +124,13 @@ one and drops dead rows.
 
 ### Search narrows candidates three times
 
-1. Probe the `nprobe` lists (default 8) whose centroids are closest to the query.
+1. Probe the lists whose centroids are closest to the query. An explicit `nprobe` probes exactly
+   that many. Without one, probe at least 8 and keep adding lists, in centroid order, until the
+   probed lists hold `16 × k × oversample` rows (1280 at the defaults) or none are left. Small
+   lists need this: a 4200-vector segment from auto-compaction has about 65 lists of about 65
+   rows, and on data with few natural clusters neighbours spread over many of them (recall@10
+   was about 0.7 with 8 lists, 0.94 or more with the adaptive count). Segments with large lists
+   still probe 8.
 2. A 1-bit filter keeps `k × oversample` rows per list (`oversample` default 8). It
    estimates the real metric from the signs of each vector's residual to its centroid, plus the
    residual's norm and its projection on the centroid (RaBitQ-style). This makes

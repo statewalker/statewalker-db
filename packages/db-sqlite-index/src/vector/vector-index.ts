@@ -243,14 +243,16 @@ export class VectorIndex {
 
   async search(query: ArrayLike<number>, opts: SearchOptions = {}): Promise<SearchHit[]> {
     this.#assertReady();
+    opts.signal?.throwIfAborted();
     const k = opts.k ?? 10;
     const nprobe = opts.nprobe ?? 8;
-    const perList = k * (opts.oversample ?? 8);
     const q = prepare(query, this.dims, this.metric);
     const d = this.dims;
     const filter = opts.filter;
+    const rerank = opts.exact ? k * 4 : k;
 
     return this.#read(async (segments) => {
+      opts.signal?.throwIfAborted();
       // Tail: exact, from memory.
       const tailTop = new TopK<number>(k);
       for (const [id, { vector }] of this.#tail) {
@@ -258,32 +260,62 @@ export class VectorIndex {
         tailTop.push(distance(this.metric, q, 0, vector, 0, d), id);
       }
 
-      // Stage 1: probe lists, keep the best rows of each by estimated residual distance.
-      type Hit = Candidate & { seg: SegmentIndex; data: ListData };
-      const hits: Hit[] = [];
-      // Tail ids are never live in a segment; skip them early.
-      const keep = (id: number) => !this.#tail.has(id) && (!filter || filter(id));
+      // Probe lists and load their blocks.
+      type Probed = { seg: SegmentIndex; list: number; data: ListData };
+      const probed: Probed[] = [];
       await Promise.all(
         segments.map(async (seg) => {
           const lists = seg.probe(q, nprobe);
           const datas = await this.#store.lists(seg, lists);
-          opts.signal?.throwIfAborted();
-          lists.forEach((c, i) => {
-            const data = datas[i] as ListData;
-            for (const cand of seg.filterList(q, c, data, perList, keep))
-              hits.push({ ...cand, seg, data });
+          lists.forEach((list, i) => {
+            probed.push({ seg, list, data: datas[i] as ListData });
           });
         }),
       );
+      opts.signal?.throwIfAborted();
 
-      // Liveness: a segment row counts only if its generation holds the live copy.
-      const live = await this.#generations(hits.map((h) => h.id));
+      // Stage 1: keep the best `perList` rows of each list by estimated residual
+      // distance. A segment row counts only if its generation holds the live copy
+      // of its id. Rows found dead (deleted, or overwritten in another generation)
+      // are excluded and the list is filtered again with a doubled limit, so dead
+      // rows never take the slots of live ones (#33).
+      type Hit = Candidate & { seg: SegmentIndex; data: ListData };
+      const perList = k * (opts.oversample ?? 8);
+      const gens = new Map<number, number | undefined>(); // id -> live gen; undefined = deleted
+      const hits: Hit[] = [];
+      let pending = probed.map((p) => ({ ...p, limit: perList }));
+      while (pending.length > 0) {
+        const rounds = pending.map((p) => {
+          // Tail ids are never live in a segment; known-dead rows are skipped too.
+          const keep = (id: number) =>
+            !this.#tail.has(id) &&
+            !(gens.has(id) && gens.get(id) !== p.seg.gen) &&
+            (!filter || filter(id));
+          return { p, cands: p.seg.filterList(q, p.list, p.data, p.limit, keep) };
+        });
+        const unknown = rounds
+          .flatMap((r) => r.cands.map((c) => c.id))
+          .filter((id) => !gens.has(id));
+        if (unknown.length > 0) {
+          const found = await this.#generations(unknown);
+          for (const id of unknown) gens.set(id, found.get(id));
+          opts.signal?.throwIfAborted();
+        }
+        pending = [];
+        for (const { p, cands } of rounds) {
+          const live = cands.filter((c) => gens.get(c.id) === p.seg.gen);
+          if (live.length < perList && cands.length === p.limit) {
+            pending.push({ ...p, limit: p.limit * 2 }); // some were dead and more rows remain
+            continue;
+          }
+          for (const cand of live.slice(0, perList))
+            hits.push({ ...cand, seg: p.seg, data: p.data });
+        }
+      }
 
       // Stage 2: int8 re-rank.
-      const rerank = opts.exact ? k * 4 : k;
       const segTop = new TopK<Hit>(rerank);
       for (const h of hits) {
-        if (live.get(h.id) !== h.seg.gen) continue;
         segTop.push(h.seg.scoreInt8(q, h.data, h.row), h);
       }
       let segResults = segTop

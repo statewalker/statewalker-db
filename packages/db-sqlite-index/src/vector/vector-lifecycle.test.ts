@@ -65,6 +65,70 @@ for (const [name, open] of Object.entries(BACKENDS)) {
       }
     });
 
+    it("deleted rows do not crowd live vectors out of search (#33)", async () => {
+      const { index } = await setup();
+      const items = dataset(1000, 18);
+      await index.upsert(items);
+      await index.compact();
+      const q = (items[0] as (typeof items)[number]).vector;
+      const nearest = bruteForce(items, q, 400, "cosine");
+      await index.delete(nearest);
+      const dead = new Set(nearest);
+      const remaining = items.filter((it) => !dead.has(it.id));
+      for (const exact of [false, true]) {
+        const hits = await index.search(q, { k: 10, exact });
+        expect(hits.length).toBe(10);
+        expect(hits.some((h) => dead.has(h.id))).toBe(false);
+      }
+      const all = { k: 10, nprobe: 1e6, oversample: 1e6, exact: true };
+      const precise = await index.search(q, all);
+      expect(precise.map((h) => h.id)).toEqual(bruteForce(remaining, q, 10, "cosine"));
+    });
+
+    it("overwritten rows do not crowd live vectors out of search (#33)", async () => {
+      const { index } = await setup();
+      const items = dataset(1000, 19);
+      await index.upsert(items);
+      await index.compact();
+      const q = (items[0] as (typeof items)[number]).vector;
+      const nearest = new Set(bruteForce(items, q, 400, "cosine"));
+      // Move the 400 nearest far away, then seal them into a second segment.
+      const far = Float32Array.from(q, (x) => -x);
+      await index.upsert([...nearest].map((id) => ({ id, vector: far })));
+      await index.compact();
+      const hits = await index.search(q, { k: 10 });
+      expect(hits.length).toBe(10);
+      expect(hits.some((h) => nearest.has(h.id))).toBe(false);
+    });
+
+    it("an already-aborted signal rejects search, even with no segments (#42)", async () => {
+      const { index } = await setup();
+      const q = dataset(1, 20)[0]?.vector as Float32Array;
+      const ac = new AbortController();
+      ac.abort();
+      await expect(index.search(q, { signal: ac.signal })).rejects.toThrow();
+      await index.upsert(dataset(5, 20));
+      await expect(index.search(q, { signal: ac.signal })).rejects.toThrow();
+    });
+
+    it("rejects a zero vector under cosine on upsert and search (#42)", async () => {
+      const { index } = await setup();
+      const zero = new Float32Array(D);
+      await expect(index.upsert([{ id: 1, vector: zero }])).rejects.toThrow(/zero vector/);
+      expect(index.stats.tail).toBe(0);
+      await expect(index.search(zero)).rejects.toThrow(/zero vector/);
+    });
+
+    it("accepts a zero vector under l2 and dot", async () => {
+      for (const metric of ["l2", "dot"] as const) {
+        const db = await open();
+        const index = new VectorIndex({ db, prefix: "vec_", dims: D, metric });
+        await index.init();
+        await index.upsert([{ id: 1, vector: new Float32Array(D) }]);
+        expect((await index.search(new Float32Array(D), { k: 1 }))[0]?.id).toBe(1);
+      }
+    });
+
     it("splits list blocks into parts no larger than PART_BYTES", async () => {
       const dims = 768;
       const { db, index } = await setup(dims);

@@ -50,10 +50,18 @@ const rows = await db.query("SELECT $1::int + 1 AS n", [41]);
   `CREATE EXTENSION`; do that after opening.
 - **No transactions helper.** `inTransaction` from `@statewalker/db-sqlite` is SQLite-only and
   rejects this Db. Postgres runs `BEGIN ... COMMIT` as ordinary SQL inside one `exec`.
-- **After `close()`** every call rejects with `db-pglite: the database is closed`; a second
-  `close()` does nothing.
-- **Dependencies:** `@statewalker/db-api` (types); peer `@electric-sql/pglite` (the engine,
-  provided by the caller).
+- **One call at a time.** The `Db` is built by `newSerialisedDb` from `@statewalker/db-sqlite`
+  (the lifecycle every driver shares): calls run in call order; `close()` waits for the calls
+  made before it, then closes PGlite; a call made once `close()` has started rejects with
+  `db-pglite: the database is closed`; a second `close()` is a no-op.
+- **Values are PGlite's**, with integers as the `Db` contract asks (`number` within
+  ±(2^53 - 1), `bigint` beyond): BYTEA is a `Uint8Array`, DATE and TIMESTAMP(TZ) a `Date`, and
+  NUMERIC/DECIMAL its exact decimal string (`"1.25"`), which PGlite returns to keep every digit;
+  convert it with `Number(value)` where a double is enough. The conformance suite declares its
+  BLOB column as `BYTEA` here (`blobType`).
+- **Dependencies:** `@statewalker/db-api` (types), `@statewalker/db-sqlite` (`newSerialisedDb`,
+  the shared lifecycle wrapper; no SQLite engine comes with it); peer `@electric-sql/pglite`
+  (the engine, provided by the caller).
 
 ## License
 

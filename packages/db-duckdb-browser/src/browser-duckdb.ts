@@ -1,5 +1,6 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
-import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
+import type { Db, DbOptions } from "@statewalker/db-api";
+import { newSerialisedDb } from "@statewalker/db-sqlite";
 import { arrowTableToObjects } from "./arrow-values.js";
 import { toDuckDbParams } from "./params.js";
 import { browserStartEnv, startDuckDb } from "./start-duckdb.js";
@@ -26,6 +27,11 @@ export interface BrowserDuckDbOptions extends DbOptions {
  * returned promise rejects; it never falls back to an in-memory database.
  * `options.path` without `options.bundles` rejects before any worker starts.
  *
+ * Calls run one at a time, in call order; `close()` waits for them, then
+ * terminates the worker; later calls reject with
+ * `db-duckdb-browser: the database is closed`. Integers come back as numbers
+ * when safe, as bigints beyond ±(2^53 - 1).
+ *
  * @param options.path     `opfs://` path for persistent storage. Omit for in-memory.
  * @param options.bundles  Same-origin bundle URLs (required for OPFS).
  */
@@ -48,37 +54,42 @@ export async function newBrowserDuckDb(options?: BrowserDuckDbOptions): Promise<
     browserStartEnv,
   );
 
-  return {
-    async query<T = DbEntry>(sql: string, params?: unknown[]): Promise<T[]> {
-      if (params && params.length > 0) {
-        // Convert first: an unsupported param throws before a statement exists.
-        const bound = toDuckDbParams(params);
-        const stmt = await conn.prepare(sql);
-        try {
-          const result = await stmt.query(...bound);
-          return arrowTableToObjects<T>(result);
-        } finally {
-          await stmt.close();
+  return newSerialisedDb(
+    {
+      async query(sql, params) {
+        if (params.length > 0) {
+          // Convert first: an unsupported param throws before a statement exists.
+          const bound = toDuckDbParams(params);
+          const stmt = await conn.prepare(sql);
+          try {
+            const result = await stmt.query(...bound);
+            return arrowTableToObjects<Record<string, unknown>>(result);
+          } finally {
+            await stmt.close();
+          }
         }
-      }
-      const result = await conn.query(sql);
-      return arrowTableToObjects<T>(result);
-    },
+        const result = await conn.query(sql);
+        return arrowTableToObjects<Record<string, unknown>>(result);
+      },
 
-    async exec(sql: string): Promise<void> {
-      await conn.query(sql);
-    },
+      async exec(sql) {
+        await conn.query(sql);
+      },
 
-    async flush(): Promise<void> {
-      // CHECKPOINT writes the WAL into the OPFS database file so committed
-      // changes survive a reload. Crucial for OPFS persistence.
-      if (path) await conn.query("CHECKPOINT");
-    },
+      async flush() {
+        // CHECKPOINT writes the WAL into the OPFS database file so committed
+        // changes survive a reload. Crucial for OPFS persistence.
+        if (path) await conn.query("CHECKPOINT");
+      },
 
-    async close(): Promise<void> {
-      await conn.close();
-      await db.terminate();
-      worker.terminate();
+      // Runs after every earlier call has settled: terminating the worker
+      // while a request is pending would leave that request unsettled.
+      async close() {
+        await conn.close();
+        await db.terminate();
+        worker.terminate();
+      },
     },
-  };
+    { name: "db-duckdb-browser" },
+  );
 }

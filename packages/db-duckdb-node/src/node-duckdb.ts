@@ -22,10 +22,14 @@ import {
   timestampValue,
   VARCHAR,
 } from "@duckdb/node-api";
-import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
+import type { Db, DbOptions } from "@statewalker/db-api";
+import { newSerialisedDb } from "@statewalker/db-sqlite";
 
 /**
- * Create a DuckDB-backed {@link Db} using native Node.js bindings.
+ * Create a DuckDB-backed {@link Db} using native Node.js bindings. Calls run one at a time, in
+ * call order; `close()` waits for them, then closes; later calls reject with
+ * `db-duckdb-node: the database is closed`. Integers come back as numbers when safe, as bigints
+ * beyond ±(2^53 - 1).
  *
  * @param options.path  File path for persistent storage. Omit for in-memory.
  */
@@ -33,32 +37,33 @@ export async function newNodeDuckDb(options?: DbOptions): Promise<Db> {
   const instance = await DuckDBInstance.create(options?.path ?? ":memory:");
   const connection = await instance.connect();
 
-  return {
-    async query<T = DbEntry>(sql: string, params?: unknown[]): Promise<T[]> {
-      await assertSingleStatement(connection, sql);
-      if (params && params.length > 0) {
-        const prepared = await connection.prepare(sql);
-        try {
-          bindParams(prepared, params);
-          const reader = await prepared.runAndReadAll();
-          return reader.getRowObjectsJS() as T[];
-        } finally {
-          prepared.destroySync();
+  return newSerialisedDb(
+    {
+      async query(sql, params) {
+        await assertSingleStatement(connection, sql);
+        if (params.length > 0) {
+          const prepared = await connection.prepare(sql);
+          try {
+            bindParams(prepared, params);
+            const reader = await prepared.runAndReadAll();
+            return reader.getRowObjectsJS() as Record<string, unknown>[];
+          } finally {
+            prepared.destroySync();
+          }
         }
-      }
-      const reader = await connection.runAndReadAll(sql);
-      return reader.getRowObjectsJS() as T[];
+        const reader = await connection.runAndReadAll(sql);
+        return reader.getRowObjectsJS() as Record<string, unknown>[];
+      },
+      async exec(sql) {
+        await connection.run(sql);
+      },
+      close() {
+        connection.closeSync();
+        instance.closeSync();
+      },
     },
-
-    async exec(sql: string): Promise<void> {
-      await connection.run(sql);
-    },
-
-    async close(): Promise<void> {
-      connection.closeSync();
-      instance.closeSync();
-    },
-  };
+    { name: "db-duckdb-node" },
+  );
 }
 
 /**

@@ -3,7 +3,7 @@ import { runDbConformance } from "@statewalker/db-tests";
 import { describe, expect, it } from "vitest";
 import { newPgliteDb } from "./pglite-db.js";
 
-runDbConformance((options) => newPgliteDb(options), { placeholder: "$1" });
+runDbConformance((options) => newPgliteDb(options), { placeholder: "$1", blobType: "BYTEA" });
 
 describe("newPgliteDb", () => {
   it("loads the extensions it is given (pgvector, as indexer-pglite needs)", async () => {

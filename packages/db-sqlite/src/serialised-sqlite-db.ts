@@ -1,4 +1,5 @@
 import type { Db, DbEntry } from "@statewalker/db-api";
+import { newDbCallQueue, toSafeIntegers } from "./serialised-db.js";
 import { countSqlStatements, firstSqlStatement } from "./sql-statements.js";
 import { SQLITE_TRANSACTION, type SqliteTransactionHook } from "./sqlite-transaction.js";
 
@@ -16,15 +17,6 @@ export type SqliteEngine = {
   close(): void;
   transaction?<T>(fn: () => Promise<T>): Promise<T>;
 };
-
-function newLock() {
-  let tail: Promise<unknown> = Promise.resolve();
-  return <T>(fn: () => Promise<T>): Promise<T> => {
-    const run = tail.then(fn);
-    tail = run.catch(() => undefined);
-    return run;
-  };
-}
 
 const EMPTY_SQL = "db-sqlite: the SQL is empty (only whitespace, comments or semicolons)";
 const MANY_STATEMENTS =
@@ -81,26 +73,10 @@ function toSqliteParam(value: unknown, index: number): unknown {
   );
 }
 
-const MIN_SAFE = BigInt(Number.MIN_SAFE_INTEGER);
-const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
-
-/** Integers within ±(2^53 - 1) become numbers; larger ones stay bigints (no precision loss). */
-function fromSqliteRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
-  for (const row of rows) {
-    for (const key in row) {
-      const value = row[key];
-      if (typeof value === "bigint" && value >= MIN_SAFE && value <= MAX_SAFE) {
-        row[key] = Number(value);
-      }
-    }
-  }
-  return rows;
-}
-
 function runAll(engine: SqliteEngine, sql: string, params: unknown[]): Record<string, unknown>[] {
   checkSql(sql, true);
   // Only the statement itself reaches the engine: DO SQLite rejects an empty tail ("; -- c ;").
-  return fromSqliteRows(engine.all(firstSqlStatement(sql), params.map(toSqliteParam)));
+  return toSafeIntegers(engine.all(firstSqlStatement(sql), params.map(toSqliteParam)));
 }
 
 function runExec(engine: SqliteEngine, sql: string): void {
@@ -109,18 +85,16 @@ function runExec(engine: SqliteEngine, sql: string): void {
 }
 
 /**
- * Wrap an engine as a `Db` whose calls run one at a time, in call order, and which carries the
- * `inTransaction` hook. Every SQLite driver gets the same input handling here: empty SQL rejects,
- * `query` rejects a second statement, parameters are normalised (one SQLite cannot bind rejects)
- * and safe integers come back as numbers. The `tx` handed to a transaction callback bypasses the
- * queue, has no hook (so nesting is rejected) and rejects once its transaction has finished.
+ * Wrap an engine as a `Db` with the lifecycle of `newSerialisedDb` (calls run one at a time, in
+ * call order; `close()` waits for earlier calls; later calls reject with
+ * `db-sqlite: the database is closed`; closing twice is a no-op) and the `inTransaction` hook.
+ * Every SQLite driver gets the same input handling here: empty SQL rejects, `query` rejects a
+ * second statement, parameters are normalised (one SQLite cannot bind rejects) and safe integers come back as numbers. The `tx`
+ * handed to a transaction callback bypasses the queue, has no hook (so nesting is rejected) and
+ * rejects once its transaction has finished.
  */
 export function newSerialisedSqliteDb(engine: SqliteEngine): Db {
-  const lock = newLock();
-  let closed = false;
-  const live = () => {
-    if (closed) throw new Error("db-sqlite: the database is closed");
-  };
+  const queue = newDbCallQueue("db-sqlite", () => engine.close());
   const runTransaction =
     engine.transaction?.bind(engine) ??
     (async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -140,8 +114,7 @@ export function newSerialisedSqliteDb(engine: SqliteEngine): Db {
     });
 
   const transaction: SqliteTransactionHook = (cb) =>
-    lock(async () => {
-      live();
+    queue.run(async () => {
       let finished = false;
       const open = () => {
         if (finished) throw new Error("db-sqlite: the transaction is finished; use the outer Db");
@@ -168,21 +141,9 @@ export function newSerialisedSqliteDb(engine: SqliteEngine): Db {
 
   return {
     query: <T = DbEntry>(sql: string, params: unknown[] = []) =>
-      lock(async () => {
-        live();
-        return runAll(engine, sql, params) as T[];
-      }),
-    exec: (sql: string) =>
-      lock(async () => {
-        live();
-        runExec(engine, sql);
-      }),
-    close: () =>
-      lock(async () => {
-        if (closed) return;
-        closed = true;
-        engine.close();
-      }),
+      queue.run(() => runAll(engine, sql, params) as T[]),
+    exec: (sql: string) => queue.run(() => runExec(engine, sql)),
+    close: () => queue.close(),
     [SQLITE_TRANSACTION]: transaction,
   } as Db;
 }

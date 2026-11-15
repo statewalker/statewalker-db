@@ -125,7 +125,7 @@ describe("newNodeDuckDb", () => {
   describe("list item types", () => {
     it("infers list types from all items, not only the first", async () => {
       db = await newNodeDuckDb();
-      const rows = await db.query<{ d: number[]; b: bigint[]; s: string[]; n: number[] }>(
+      const rows = await db.query<{ d: number[]; b: number[]; s: string[]; n: number[] }>(
         "SELECT $1 AS d, $2 AS b, $3 AS s, $4 AS n",
         [
           [0, 0.5],
@@ -135,7 +135,8 @@ describe("newNodeDuckDb", () => {
         ],
       );
       expect(rows[0]?.d).toEqual([0, 0.5]);
-      expect(rows[0]?.b).toEqual([1n, 3_000_000_000n]);
+      // Bound as BIGINT[] (3e9 exceeds INTEGER); safe integers come back as numbers.
+      expect(rows[0]?.b).toEqual([1, 3_000_000_000]);
       expect(rows[0]?.s).toEqual(["a", "b"]);
       expect(rows[0]?.n).toEqual([null, 1]);
     });

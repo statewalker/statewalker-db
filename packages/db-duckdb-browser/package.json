@@ -46,7 +46,8 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "catalog:",
-    "@statewalker/db-api": "workspace:^"
+    "@statewalker/db-api": "workspace:^",
+    "@statewalker/db-sqlite": "workspace:^"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",

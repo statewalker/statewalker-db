@@ -11,7 +11,7 @@ catalog:
   "@electric-sql/pglite-pgvector": ^0.0.17
   '@biomejs/biome': ^2.5.15
   '@duckdb/duckdb-wasm': 1.33.1-dev65.0
-  '@duckdb/node-api': ^1.5.5-r.4
+  '@duckdb/node-api': ^2.0.0-r.1
   '@playwright/test': ^1.63.0
   '@types/node': ^26.6.4
   '@vitest/browser': ^5.0.3

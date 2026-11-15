@@ -1,15 +1,11 @@
 import { sqliteTransactionScenarios } from "@statewalker/db-tests/sqlite-transaction-scenarios";
-import { ngramDoScenarios } from "../../db-sqlite-index/src/ngram/do-smoke.js";
-import { vectorDoScenarios } from "../../db-sqlite-index/src/vector/do-smoke.js";
 import { DO_UNSUPPORTED_SCENARIOS } from "./unsupported-scenarios.js";
 
 /**
- * Every scenario the real-DO suite runs. Other packages of this repository append their smoke
- * scenarios here by relative import of a file in their own src/ (no package dependency: that
- * would be a workspace cycle). Names must be unique.
+ * Every scenario the real-DO suite runs: the SQLite transaction scenarios a DO can meet. Packages
+ * built on this driver run their own smoke scenarios in their own `test:do` (db-sqlite-index's
+ * test-do/), so this package depends on none of them. Names must be unique.
  */
-export const SCENARIOS = [
-  ...sqliteTransactionScenarios.filter((s) => !DO_UNSUPPORTED_SCENARIOS.includes(s.name)),
-  ...vectorDoScenarios,
-  ...ngramDoScenarios,
-];
+export const SCENARIOS = sqliteTransactionScenarios.filter(
+  (s) => !DO_UNSUPPORTED_SCENARIOS.includes(s.name),
+);

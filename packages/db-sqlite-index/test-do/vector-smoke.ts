@@ -1,11 +1,11 @@
 import type { Db } from "@statewalker/db-api";
-import { VectorIndex } from "./vector-index.js";
+import { VectorIndex } from "../src/vector/vector-index.js";
 
 const check = (ok: boolean, message: string) => {
   if (!ok) throw new Error(`vector smoke: ${message}`);
 };
 
-/** Run inside a real Durable Object by db-sqlite-do's `pnpm test:do`. */
+/** Run inside a real Durable Object by `pnpm test:do` (test-do/scenarios.ts). */
 export const vectorDoScenarios = [
   {
     name: "vector: multi-part segment rows, 150 ids in one delete, read-back",

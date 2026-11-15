@@ -12,6 +12,7 @@ jobs:
       baseline: library
       secret-scan: true
       api-diff: true
+      package-checks: true
       release-path: true
 
   # Releases to npm in three jobs: `version` opens the version pull request, `pack` packs what

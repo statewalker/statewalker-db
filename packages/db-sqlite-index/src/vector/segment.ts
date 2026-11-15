@@ -209,6 +209,15 @@ export class SegmentIndex {
   }
 
   /**
+   * Whether stage 1 passes a list of `n` rows whole (in row order, not ranked):
+   * a list no longer than `limit`, or a flat segment's only list of at most
+   * {@link MIN_TRAIN} rows. Callers must not cut such a list by position.
+   */
+  passesWhole(n: number, limit: number): boolean {
+    return n <= limit || (this.nlist === 1 && n <= MIN_TRAIN);
+  }
+
+  /**
    * Stage 1: the `limit` rows of a list with the best estimated distance, from
    * residual sign bits plus the stored residual norm and centroid projection.
    *
@@ -226,7 +235,7 @@ export class SegmentIndex {
     keep?: (id: number) => boolean,
   ): Candidate[] {
     const n = data.ids.length;
-    if (n <= limit || (this.nlist === 1 && n <= MIN_TRAIN)) {
+    if (this.passesWhole(n, limit)) {
       const all: Candidate[] = [];
       for (let r = 0; r < n; r++) {
         const id = data.ids[r];

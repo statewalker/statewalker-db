@@ -3,6 +3,16 @@ import type { Db, DbOptions } from "@statewalker/db-api";
 import { newSerialisedSqliteDb } from "@statewalker/db-sqlite";
 
 /**
+ * node:sqlite binds every JS number as a REAL, so `5` would be stored as `5.0` in a TEXT column.
+ * Bind integer-valued numbers as bigint, which it binds as INTEGER, like the other drivers do.
+ */
+function toNodeParam(value: unknown): SQLInputValue {
+  return typeof value === "number" && Number.isSafeInteger(value)
+    ? BigInt(value)
+    : (value as SQLInputValue);
+}
+
+/**
  * Create a SQLite {@link Db} on Node.js's built-in `node:sqlite`.
  *
  * @param options.path  Database file. Omit for an in-memory database.
@@ -14,7 +24,7 @@ export async function newNodeSqliteDb(options?: DbOptions): Promise<Db> {
       // Integers as bigint, so one above 2^53 is read exactly; db-sqlite turns safe ones into numbers.
       const statement = db.prepare(sql);
       statement.setReadBigInts(true);
-      return statement.all(...(params as SQLInputValue[])) as Record<string, unknown>[];
+      return statement.all(...params.map(toNodeParam)) as Record<string, unknown>[];
     },
     exec: (sql) => db.exec(sql),
     close: () => db.close(),

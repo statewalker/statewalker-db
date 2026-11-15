@@ -306,6 +306,22 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
     },
   },
   {
+    name: "integer numbers bind as INTEGER, other numbers as REAL",
+    async run(db) {
+      const [types] = await db.query<Record<string, unknown>>(
+        "SELECT typeof(?) AS i, typeof(?) AS r, typeof(?) AS z",
+        [5, 2.5, 0],
+      );
+      check(types?.i === "integer", `5 bound as ${String(types?.i)}`);
+      check(types?.r === "real", `2.5 bound as ${String(types?.r)}`);
+      check(types?.z === "integer", `0 bound as ${String(types?.z)}`);
+      await db.exec("CREATE TABLE tx_text (k INTEGER PRIMARY KEY, t TEXT)");
+      await db.query("INSERT INTO tx_text (k, t) VALUES (?, ?)", [1, 5]);
+      const [row] = await db.query<{ t: unknown }>("SELECT t FROM tx_text WHERE k = ?", [1]);
+      check(row?.t === "5", `5 stored in a TEXT column as ${JSON.stringify(row?.t)}`);
+    },
+  },
+  {
     name: "query and exec on a plain Db run in call order",
     async run(db) {
       const order: string[] = [];

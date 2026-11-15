@@ -40,6 +40,8 @@ export function newFakeDoStorage(): FakeDoStorage {
       if (value.byteLength > MAX_VALUE_BYTES) throw tooBig();
       return value.byteLength === 0 ? EMPTY_BLOB : new Uint8Array(value);
     }
+    // node:sqlite binds every number as REAL; bind integer-valued ones as INTEGER.
+    if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
     return value as SQLInputValue;
   };
   return {

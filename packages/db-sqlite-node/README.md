@@ -54,6 +54,9 @@ await db.close();
 - **Rows are plain objects with a `null` prototype**, BLOBs are `Uint8Array`, integers are
   JavaScript numbers, except one above 2^53 (or below -2^53), which comes back as an exact
   `bigint`. Statements read integers with `setReadBigInts(true)`.
+- **Integer-valued numbers bind as INTEGER.** node:sqlite binds every JS number as a REAL, so
+  the driver passes a safe integer as a `bigint`: `typeof(?)` of `5` is `'integer'`, and `5` in a
+  TEXT column reads back as `'5'`, as on the other SQLite drivers. Other numbers bind as REAL.
 - **Errors are `node:sqlite`'s.** A path in a missing directory rejects with
   `unable to open database file`; bad SQL rejects with `near "...": syntax error`; a call after
   `close()` rejects with `db-sqlite: the database is closed`.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fold } from "./fold.js";
+import { fold, foldIdentity } from "./fold.js";
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 
@@ -46,5 +46,24 @@ describe("fold", () => {
     const a = "ΟΔΟΣ ſtraße";
     const b = "İK";
     expect(fold(a + b)).toBe(fold(a) + fold(b));
+  });
+});
+
+describe("foldIdentity", () => {
+  it("is stable for the same fold and memoized", () => {
+    expect(foldIdentity()).toMatch(/^fold-v1:[0-9a-f]+$/);
+    expect(foldIdentity()).toBe(foldIdentity());
+    expect(foldIdentity(fold)).toBe(foldIdentity());
+  });
+
+  it("changes when one code point folds differently", () => {
+    const changed = (text: string) => fold(text).replaceAll("\u0101", "a");
+    expect(foldIdentity(changed)).not.toBe(foldIdentity());
+    expect(foldIdentity((text) => text)).not.toBe(foldIdentity());
+  });
+
+  it("covers case mappings outside the BMP (Deseret, Adlam)", () => {
+    const changed = (text: string) => fold(text).replaceAll("\u{1E922}", "x");
+    expect(foldIdentity(changed)).not.toBe(foldIdentity());
   });
 });

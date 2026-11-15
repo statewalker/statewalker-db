@@ -10,6 +10,8 @@ export type GramBackend = {
   add(tx: Db, items: NgramItem[]): Promise<void>;
   /** `items` hold the texts as currently stored, so their grams can be removed exactly. */
   remove(tx: Db, items: NgramItem[]): Promise<void>;
+  /** Removes every gram, leaving an empty store (used to rebuild after a fold change). */
+  clear(tx: Db): Promise<void>;
   /** Ids whose text contains every literal of at least one branch; ascending, at most `max`. */
   candidates(db: Db, branches: string[][], max: number): Promise<number[]>;
 };
@@ -41,6 +43,8 @@ export function newFts5Backend(prefix: string): GramBackend {
       ),
     add: (tx, items) => write(tx, items, "insert"),
     remove: (tx, items) => write(tx, items, "delete"),
+    // 'rebuild' needs a content table; a contentless one can only be emptied.
+    clear: (tx) => tx.exec(`INSERT INTO ${table}(${table}) VALUES ('delete-all')`),
     async candidates(db, branches, max) {
       // A quoted string is a phrase of consecutive trigrams, i.e. an exact substring.
       const quote = (literal: string) => `"${literal.replaceAll('"', '""')}"`;

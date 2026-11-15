@@ -36,6 +36,7 @@ export function newPostingsBackend(prefix: string): GramBackend {
         );
       }
     },
+    clear: (tx) => tx.exec(`DELETE FROM ${table}`),
     async candidates(db, branches, max) {
       const ids = new Set<number>();
       for (const branch of branches) {

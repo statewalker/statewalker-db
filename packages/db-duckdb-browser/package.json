@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-duckdb-browser",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": false,
   "type": "module",
   "description": "DuckDB WASM driver for @statewalker/db-api, targeting browser environments.",

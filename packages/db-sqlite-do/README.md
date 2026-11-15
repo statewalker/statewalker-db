@@ -61,11 +61,11 @@ const db = newDoSqliteDb(newFakeDoStorage());
 `pnpm test:do` (from the repository root) builds the workspace, starts `celld dev` on
 `packages/db-sqlite-do/test-do/` with a clean state on a free port, and runs, inside a real
 Durable Object, the shared `Db` conformance suite (through a small HTTP bridge), every scenario
-listed in `test-do/scenarios.ts` (the SQLite transaction scenarios a DO can meet, plus the
-vector and n-gram smoke scenarios of `@statewalker/db-sqlite-index`), and a platform probe whose expectations the `./fake` must also meet. It
+listed in `test-do/scenarios.ts` (the SQLite transaction scenarios a DO can meet), and a platform probe whose expectations the `./fake` must also meet. It
 needs celld 0.6.x on `PATH`; with another version it stops at once with
 `test:do needs celld 0.6.x on PATH, found "<version>"`. A celld that prints no `ready` line within 60 seconds fails
-the run with `celld dev was not ready within 60 s`. It stops only the celld process it started. It is not part of `pnpm test`: run it before a release.
+the run with `celld dev was not ready within 60 s`. It stops only the celld process it started. It is not part of `pnpm test`: run it before a release. The same root `pnpm test:do` also runs
+`@statewalker/db-sqlite-index`'s smoke scenarios in its own `test-do/`.
 
 ## Internals
 

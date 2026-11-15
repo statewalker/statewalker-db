@@ -42,6 +42,25 @@ for (const [name, open] of Object.entries(BACKENDS)) {
       });
     }
 
+    // Issue #40: 1500 vectors in 3 clusters compact into one flat list, whose centroid (the
+    // global mean) makes the 1-bit estimate weak; recall@10 was 0.43-0.51 at default settings.
+    for (const metric of ["cosine", "l2"] as const) {
+      it(`a flat segment keeps recall on less-separated data (${metric})`, async () => {
+        const { index } = await setup(metric);
+        const items = dataset(1500, 40, D, 3);
+        await index.upsert(items);
+        await index.compact();
+        expect(index.stats.segments[0]?.nlist).toBe(1);
+        const approx = await recall(index, items, metric);
+        const exact = await recall(index, items, metric, { exact: true });
+        console.log(
+          `  ${name} ${metric} 3 clusters: recall@10 int8=${approx.toFixed(3)} exact=${exact.toFixed(3)}`,
+        );
+        expect(approx).toBeGreaterThanOrEqual(0.9);
+        expect(exact).toBeGreaterThanOrEqual(0.9);
+      });
+    }
+
     it("deletes and overwrites hide segment copies; merge drops them", async () => {
       const { index, db } = await setup();
       const items = dataset(2000, 3);

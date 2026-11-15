@@ -84,8 +84,9 @@ five databases if their writes do not overlap.
   engine runs it; `true`/`false`, `undefined` and `Date` parameters bind as `1`/`0`, `NULL` and
   ISO 8601 text. This comes from `@statewalker/db-sqlite`, the same on every SQLite driver. Use
   `exec` for scripts.
-- **The engine loads once per `wasmUrl`.** A failed load (for example a wrong `wasmUrl`) is not
-  retried for that URL.
+- **The engine loads once per `wasmUrl`.** A failed load (a wrong `wasmUrl`, a network error) is
+  not cached: the next call tries again. The same holds for the OPFS pool: after an open failed
+  with the OPFS lock error, a later open in the same worker works once the other worker is gone.
 - **Dependencies:** `@sqlite.org/sqlite-wasm` (the engine), `@statewalker/db-sqlite` (queue and
   transactions), `@statewalker/db-api` (types).
 

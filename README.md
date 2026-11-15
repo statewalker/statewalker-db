@@ -47,7 +47,7 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 `packageManager` in `package.json`; `corepack enable` makes `pnpm` use it.
 
 1. `pnpm install`
-2. `pnpm run build` builds every package with tsdown into its `dist/` (and the
+2. `pnpm run build` builds every published package with tsdown into its `dist/` (and the
    demo with Vite).
 3. `pnpm run test` runs the Node test suites, including
    `tools/consumer-install`.
@@ -100,8 +100,9 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 - **A browser driver imports fine under Node.js, then fails.**
   `newBrowserDuckDb()` rejects with `Worker is not defined`;
   `newBrowserSqliteDb()` works in memory under Node.js but rejects a `path` (OPFS needs a Dedicated Worker).
-- **`pnpm run test:do` starts a celld node.** It runs `celld dev packages/db-sqlite-do/test-do
-  --port <free port> --clean --no-watch` and stops that process at the end. A celld other than
+- **`pnpm run test:do` starts a celld node per package.** It runs `celld dev
+  packages/<package>/test-do --port <free port> --clean --no-watch` for `db-sqlite-do` and then
+  `db-sqlite-index`, and stops each process at the end. A celld other than
   0.6.x stops it before any test with `test:do needs celld 0.6.x on PATH, found "<version>"`; a
   node that prints no `ready` line within 60 seconds fails it with `celld dev was not ready within
   60 s`.
@@ -112,12 +113,12 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 
 | Command | What it does |
 | --- | --- |
-| `pnpm run build` | `pnpm -r run build` (tsdown in every package, `vite build` for the demo) |
+| `pnpm run build` | `pnpm -r run build` (tsdown in every published package, `vite build` for the demo) |
 | `pnpm run test` | `pnpm -r run test` (Vitest, Node.js) |
 | `pnpm run test:browser` | `test:browser` of `db-sqlite-browser` and `db-duckdb-browser` (Vitest browser mode, Playwright, Chromium) |
-| `pnpm run test:do` | builds, then runs `db-sqlite-do`'s Durable Object tests on a real celld (needs celld 0.6.x on PATH) |
+| `pnpm run test:do` | builds, then runs the `test:do` Durable Object tests of `db-sqlite-do` and `db-sqlite-index` on a real celld, one package at a time (needs celld 0.6.x on PATH) |
 | `pnpm run typecheck` | `tsc --noEmit` in every package |
-| `pnpm run typecheck:tests` | typechecks the test files that `typecheck` does not cover (`db-sqlite-do`'s `test-do/`) |
+| `pnpm run typecheck:tests` | typechecks the test files that `typecheck` does not cover (the `test-do/` of `db-sqlite-do` and `db-sqlite-index`) |
 | `pnpm run lint` / `lint:check` | `biome check --write .` / `biome check .` |
 | `pnpm run format` / `format:check` | `biome format --write .` / `biome format .` |
 | `pnpm changeset` | add a changeset (bump type and changelog text) to a pull request |

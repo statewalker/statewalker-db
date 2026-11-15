@@ -43,6 +43,22 @@ const KEYWORDS: Record<string, number> = {
 const isIdChar = (c: string) => /[A-Za-z0-9_$]/.test(c) || c.charCodeAt(0) >= 0x80;
 
 export function countSqlStatements(sql: string): SqlStatementCount {
+  return scanSqlStatements(sql).count;
+}
+
+/**
+ * The first statement of `sql` without the semicolon that ends it and without the empty tail
+ * after it (whitespace, comments, semicolons), for engines that reject such a tail (Durable
+ * Object SQLite: "SQL code did not contain a statement"). Meant for SQL that
+ * {@link countSqlStatements} counts as "one"; SQL without an ending semicolon comes back as is.
+ */
+export function firstSqlStatement(sql: string): string {
+  const { firstEnd } = scanSqlStatements(sql);
+  return firstEnd < 0 ? sql : sql.slice(0, firstEnd);
+}
+
+function scanSqlStatements(sql: string): { count: SqlStatementCount; firstEnd: number } {
+  let firstEnd = -1; // index of the ";" that ends the first statement
   let state = 0;
   let content = false; // a token other than whitespace or ";" was seen
   let firstEnded = false; // the first statement with content has reached its ";"
@@ -67,7 +83,7 @@ export function countSqlStatements(sql: string): SqlStatementCount {
       token = WS;
     } else if (c === "[" || c === "`" || c === '"' || c === "'") {
       const close = sql.indexOf(c === "[" ? "]" : c, i + 1);
-      if (close < 0) return firstEnded ? "many" : "one";
+      if (close < 0) return { count: firstEnded ? "many" : "one", firstEnd };
       i = close;
       token = OTHER;
     } else if (isIdChar(c)) {
@@ -79,12 +95,15 @@ export function countSqlStatements(sql: string): SqlStatementCount {
       token = OTHER;
     }
     if (token !== SEMI && token !== WS) {
-      if (firstEnded) return "many";
+      if (firstEnded) return { count: "many", firstEnd };
       content = true;
     }
     state = TRANS[state]?.[token] ?? 2;
-    if (token === SEMI && state === 1 && content) firstEnded = true;
+    if (token === SEMI && state === 1 && content && !firstEnded) {
+      firstEnded = true;
+      firstEnd = i;
+    }
     i++;
   }
-  return content ? "one" : "empty";
+  return { count: content ? "one" : "empty", firstEnd };
 }

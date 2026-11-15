@@ -42,8 +42,14 @@ await db.close();
 
 ## Internals
 
-- **One instance, one connection.** The factory creates a `DuckDBInstance`
-  and a single connection; `close()` closes both synchronously.
+- **One instance, one connection, one call at a time.** The factory creates a
+  `DuckDBInstance` and a single connection, wrapped by `newSerialisedDb` from
+  `@statewalker/db-sqlite` (the lifecycle every driver shares): calls run in
+  call order, `close()` waits for the calls made before it and then closes
+  both handles, later calls reject with
+  `db-duckdb-node: the database is closed`, and a second `close()` is a no-op.
+  Closing during a query used to fail it with `bad_weak_ptr` or crash the
+  process.
 - **Parameters.** With parameters, `query` prepares the statement, binds the
   array and runs it, then destroys the prepared statement. Both `$1` and `?`
   placeholders work. Supported parameter values:
@@ -70,14 +76,20 @@ await db.close();
 - **One statement per `query`.** `query` rejects SQL holding several
   statements (`query() runs one statement, ...`) instead of returning only the
   first one's rows; run scripts with `exec`.
-- **Rows are plain JS objects** (`getRowObjectsJS()`). DuckDB `BIGINT` values,
-  including `count(*)`, come back as `bigint`, not `number`.
+- **Rows are plain JS objects** (`getRowObjectsJS()`), with the integers the
+  `Db` contract asks for: a `number` within ±(2^53 - 1), a `bigint` beyond,
+  whatever the column type (`BIGINT`, `UBIGINT`, `HUGEINT`, `count(*)`), also
+  inside lists and structs. `TIME` (microseconds since midnight) and the
+  `micros` of an `INTERVAL` follow the same rule. `DECIMAL` comes back as a
+  `number` (the nearest double), `DATE` and `TIMESTAMP` as a `Date`, `BLOB` as
+  a `Buffer` (a `Uint8Array`).
 - **Errors are DuckDB's.** A bad path rejects with
   `IO Error: Cannot open file "...": No such file or directory`. Bad SQL rejects
   with `Parser Error: ...`. A call after `close()` rejects with
-  `Failed to query: connection disconnected`.
+  `db-duckdb-node: the database is closed`.
 - **Dependencies:** `@duckdb/node-api` (the engine), `@statewalker/db-api`
-  (the interface types).
+  (the interface types), `@statewalker/db-sqlite` (`newSerialisedDb`, the
+  shared lifecycle wrapper; no SQLite engine comes with it).
 
 ## License
 

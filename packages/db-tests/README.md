@@ -33,6 +33,13 @@ block.
 - `options.normalizeRow?`: maps each row before comparing it. Default: none.
 - `options.skipFilePersistence?`: skip the scenario that writes to a temp
   directory with `node:fs`. Browser drivers set it to `true`.
+- `options.blobType?`: the column type the BLOB round trip declares. Default
+  `BLOB`; `db-pglite` passes `BYTEA`.
+- `options.skip?`: scenario names (the `it` titles) a platform cannot meet,
+  skipped instead of run; give the reason next to the list. `db-duckdb-browser`
+  skips the BLOB parameter round trip (duckdb-wasm cannot bind binary data);
+  the real-DO run of `db-sqlite-do` skips the scenarios its HTTP/JSON harness
+  cannot carry (`test-do/unsupported-scenarios.ts`).
 
 Exported from `@statewalker/db-tests`: `runDbConformance`, `runSqliteTransactionConformance`,
 `sqliteTransactionScenarios`; types `MakeDb`, `RunDbConformanceOptions`,
@@ -85,7 +92,8 @@ runDbConformance(() => newBrowserDuckDb(), {
 
 ## Internals
 
-`runDbConformance` has 10 scenarios:
+`runDbConformance` has 18 scenarios, which together state the `Db` contract
+written in the JSDoc of `Db` (`@statewalker/db-api`):
 
 1. The factory returns an object with the `Db` methods.
 2. A row written with `exec` is visible to a later `query`.
@@ -94,9 +102,17 @@ runDbConformance(() => newBrowserDuckDb(), {
 5. A query with no match returns an empty array.
 6. A query returns every matching row.
 7. `flush`, when present, keeps earlier writes visible (skipped when absent).
-8. `query` and `exec` reject after `close`.
-9. Data written to a file survives close and reopen (Node.js only).
-10. Invalid SQL rejects.
+8. `query`, `exec` and `flush` reject after `close` with `the database is closed`.
+9. `close()` waits for an in-flight query (and one queued behind it), then closes.
+10. Calls made once `close()` has started reject with `the database is closed`.
+11. Closing twice, overlapping or one after the other, is a no-op.
+12. Calls issued without awaiting each other run in call order.
+13. A `Uint8Array` parameter comes back from a BLOB column as a `Uint8Array`.
+14. Integers are numbers within ±(2^53 - 1) and bigints beyond (`BIGINT`, `count(*)`).
+15. A `DECIMAL(10,2)` keeps its numeric value (a `number` or, on PGlite, a decimal string).
+16. A `Date` parameter keeps its instant (a `Date`, or ISO text on SQLite).
+17. Data written to a file survives close and reopen (Node.js only).
+18. Invalid SQL rejects.
 
 - **Why `normalizeRow`.** Some drivers return rows with a `null` prototype or
   extra non-enumerable keys; `(row) => ({ ...row })` keeps only the named columns.

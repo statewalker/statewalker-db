@@ -44,7 +44,7 @@ Rows come back with the same JS values as `@statewalker/db-duckdb-node`:
 | DuckDB type | JS value |
 | --- | --- |
 | `DECIMAL` | `number` (scaled; `1.25::DECIMAL(10,2)` is `1.25`) |
-| `BIGINT`, `UBIGINT`, `HUGEINT`, `TIME` | `bigint` |
+| `BIGINT`, `UBIGINT`, `HUGEINT`, `TIME` | `number` within ±(2^53 - 1), `bigint` beyond |
 | `INTEGER`, `DOUBLE`, ... | `number` |
 | `DATE`, `TIMESTAMP`, `TIMESTAMPTZ` | `Date` |
 | `LIST`, fixed-size `ARRAY` | array, converted recursively |
@@ -55,7 +55,8 @@ Rows come back with the same JS values as `@statewalker/db-duckdb-node`:
 `INTERVAL` is returned as duckdb-wasm's Arrow layer decodes it and does not
 match the node driver; cast it in SQL (for example to `VARCHAR`) if you need
 it. A `HUGEINT` and a `DECIMAL(38,0)` look the same in Arrow, so both come
-back as `bigint`.
+back as integers (`number` when safe, `bigint` beyond). The integer rule
+applies inside lists, structs and maps too.
 
 ### Parameter limits
 
@@ -133,6 +134,13 @@ await db.flush?.(); // CHECKPOINT: without it the insert can be lost on reload
   the path or connecting fails, the engine and its worker are terminated and
   the jsDelivr Blob URL is revoked before the call rejects with the original
   error (`src/start-duckdb.ts`).
+- **One call at a time.** The `Db` is built by `newSerialisedDb` from
+  `@statewalker/db-sqlite` (the lifecycle every driver shares): calls,
+  `flush` included, run in call order; `close()` waits for the calls made
+  before it, then closes the connection and terminates the engine and its
+  worker; later calls reject with `db-duckdb-browser: the database is closed`;
+  a second `close()` is a no-op. Terminating the worker under a pending query
+  used to leave that query unsettled forever.
 - **`flush` runs `CHECKPOINT`.** DuckDB WASM writes the OPFS database file only
   on `CHECKPOINT`. Writes not yet checkpointed can be lost on an abrupt
   teardown such as a page reload. On an in-memory database `flush` does
@@ -154,7 +162,8 @@ await db.flush?.(); // CHECKPOINT: without it the insert can be lost on reload
 - **Under Node.js** the module imports, but `newBrowserDuckDb()` rejects with
   `Worker is not defined`. Use `@statewalker/db-duckdb-node` there.
 - **Dependencies:** `@duckdb/duckdb-wasm` (the engine), `@statewalker/db-api`
-  (the interface types).
+  (the interface types), `@statewalker/db-sqlite` (`newSerialisedDb`, the
+  shared lifecycle wrapper; no SQLite engine comes with it).
 
 ## License
 

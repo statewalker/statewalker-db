@@ -3,6 +3,7 @@ import { runDbConformance } from "@statewalker/db-tests";
 import { describe, expect, inject, it } from "vitest";
 import { PROBE_EXPECTATIONS } from "./platform-probe.js";
 import { SCENARIOS } from "./scenarios.js";
+import { DO_REMOTE_UNSUPPORTED_DB_SCENARIOS } from "./unsupported-scenarios.js";
 
 const base = inject("doBaseUrl");
 
@@ -41,6 +42,7 @@ function remoteDb(id: string): Db {
 runDbConformance(async () => remoteDb(crypto.randomUUID()), {
   placeholder: "?",
   skipFilePersistence: true,
+  skip: DO_REMOTE_UNSUPPORTED_DB_SCENARIOS,
 });
 
 describe("transaction scenarios on celld", () => {

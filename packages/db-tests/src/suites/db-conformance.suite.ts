@@ -18,7 +18,7 @@
  */
 
 import type { Db, DbEntry, DbOptions } from "@statewalker/db-api";
-import { describe, expect, it } from "vitest";
+import { describe, expect, type TestFunction, it as vitestIt } from "vitest";
 
 /** Async factory producing a fresh `Db`; `{ path }` selects a file backend. */
 export type MakeDb = (options?: DbOptions) => Promise<Db>;
@@ -38,7 +38,25 @@ export interface RunDbConformanceOptions {
    * adapters leave it unset. Defaults to `false` (node behavior unchanged).
    */
   skipFilePersistence?: boolean;
+  /**
+   * Column type the BLOB round trip declares: `BLOB` (default; SQLite, DuckDB) or `BYTEA`
+   * (Postgres, PGlite).
+   */
+  blobType?: string;
+  /**
+   * Scenario names (the `it` titles) a platform cannot meet, each skipped instead of run. Say
+   * why next to the list.
+   */
+  skip?: string[];
 }
+
+/** Every `Db` rejects a call made once `close()` has started with an error saying this. */
+const CLOSED = /the database is closed/;
+
+/** A query that keeps the engine busy for a moment, so a later call finds it in flight. */
+const SLOW_COUNT =
+  "WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM r WHERE i < 100) " +
+  "SELECT count(*) AS n FROM r a, r b, r c";
 
 /**
  * Register the shared `Db` conformance scenarios for one adapter.
@@ -49,6 +67,10 @@ export interface RunDbConformanceOptions {
 export function runDbConformance(makeDb: MakeDb, options: RunDbConformanceOptions): void {
   const { placeholder } = options;
   const normalize = options.normalizeRow ?? ((row: DbEntry) => row);
+  const blobType = options.blobType ?? "BLOB";
+  const skipped = new Set(options.skip ?? []);
+  const it = (name: string, fn: TestFunction) =>
+    (skipped.has(name) ? vitestIt.skip : vitestIt)(name, fn);
 
   const expectRow = (actual: unknown, expected: DbEntry): void => {
     expect(normalize(actual as DbEntry)).toEqual(expected);
@@ -184,8 +206,148 @@ export function runDbConformance(makeDb: MakeDb, options: RunDbConformanceOption
       await db.exec("CREATE TABLE c (id INTEGER)");
       await db.close();
 
-      await expect(db.query("SELECT id FROM c")).rejects.toThrow();
-      await expect(db.exec("SELECT 1")).rejects.toThrow();
+      await expect(db.query("SELECT id FROM c")).rejects.toThrow(CLOSED);
+      await expect(db.exec("SELECT 1")).rejects.toThrow(CLOSED);
+      if (typeof db.flush === "function") await expect(db.flush()).rejects.toThrow(CLOSED);
+    });
+
+    // Requirement: close() waits for the calls made before it, then closes.
+    it("close waits for an in-flight query, then closes", async () => {
+      const db = await makeDb();
+      const slow = db.query<{ n: unknown }>(SLOW_COUNT);
+      const queued = db.query<{ x: unknown }>("SELECT 1 AS x");
+      const closed = db.close();
+      const [slowRows, queuedRows] = await Promise.all([slow, queued, closed]);
+      expect(Number(slowRows[0]?.n)).toBe(1000000);
+      expect(Number(queuedRows[0]?.x)).toBe(1);
+      await expect(db.query("SELECT 1 AS x")).rejects.toThrow(CLOSED);
+    });
+
+    // Requirement: a call made once close() has started rejects with a clean error.
+    it("calls made after close has started reject with 'the database is closed'", async () => {
+      const db = await makeDb();
+      await db.exec("CREATE TABLE late (id INTEGER)");
+      const busy = db.query(SLOW_COUNT);
+      const closed = db.close();
+      const late: Promise<unknown>[] = [
+        db.query("SELECT 1 AS x"),
+        db.exec("INSERT INTO late VALUES (1)"),
+      ];
+      if (typeof db.flush === "function") late.push(db.flush());
+      // Settle everything at once, so no rejection goes unhandled while another is awaited.
+      const [busyResult, closeResult, ...lateResults] = await Promise.allSettled([
+        busy,
+        closed,
+        ...late,
+      ]);
+      expect(busyResult?.status).toBe("fulfilled");
+      expect(closeResult?.status).toBe("fulfilled");
+      for (const result of lateResults) {
+        expect(result.status).toBe("rejected");
+        expect(String((result as PromiseRejectedResult).reason)).toMatch(CLOSED);
+      }
+    });
+
+    // Requirement: closing twice is a no-op, whether the calls overlap or not.
+    it("closing twice is a no-op", async () => {
+      const db = await makeDb();
+      await db.exec("CREATE TABLE twice (id INTEGER)");
+      await expect(Promise.all([db.close(), db.close()])).resolves.toBeDefined();
+      await expect(db.close()).resolves.toBeUndefined();
+      await expect(db.query("SELECT id FROM twice")).rejects.toThrow(CLOSED);
+    });
+
+    // Requirement: calls run one at a time, in call order, without awaiting each other.
+    it("concurrent calls run in call order", async () => {
+      const db = await makeDb();
+      try {
+        const calls: Promise<unknown>[] = [db.exec("CREATE TABLE ord (n INTEGER)")];
+        const counts: Promise<{ n: unknown }[]>[] = [];
+        for (let i = 1; i <= 10; i++) {
+          calls.push(db.exec(`INSERT INTO ord VALUES (${i})`));
+          counts.push(db.query<{ n: unknown }>("SELECT count(*) AS n FROM ord"));
+        }
+        await Promise.all(calls);
+        const seen = (await Promise.all(counts)).map((rows) => Number(rows[0]?.n));
+        expect(seen).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      } finally {
+        await db.close();
+      }
+    });
+
+    // Requirement: a BLOB comes back as a Uint8Array with the same bytes.
+    it("a BLOB parameter round-trips as a Uint8Array", async () => {
+      const db = await makeDb();
+      try {
+        await db.exec(`CREATE TABLE blobs (k INTEGER, v ${blobType})`);
+        const bytes = new Uint8Array([0, 1, 2, 127, 128, 255]);
+        await db.exec("INSERT INTO blobs VALUES (1, NULL)");
+        await db.query(`INSERT INTO blobs VALUES (2, ${placeholder})`, [bytes]);
+        const rows = await db.query<{ v: unknown }>("SELECT v FROM blobs ORDER BY k");
+        expect(rows[0]?.v).toBeNull();
+        expect(rows[1]?.v).toBeInstanceOf(Uint8Array);
+        expect(Array.from(rows[1]?.v as Uint8Array)).toEqual(Array.from(bytes));
+      } finally {
+        await db.close();
+      }
+    });
+
+    // Requirement: integers are numbers within ±(2^53 - 1) and bigints beyond, whatever the
+    // column type (INTEGER, BIGINT, count(*)).
+    it("integers come back as numbers when safe and as bigints beyond 2^53", async () => {
+      const db = await makeDb();
+      try {
+        await db.exec("CREATE TABLE ints (k INTEGER, v BIGINT)");
+        const big = 9007199254740993n; // 2^53 + 1
+        await db.query(`INSERT INTO ints VALUES (1, ${placeholder})`, [5n]);
+        await db.query(`INSERT INTO ints VALUES (2, ${placeholder})`, [big]);
+        await db.query(`INSERT INTO ints VALUES (3, ${placeholder})`, [-big]);
+        await db.exec(`INSERT INTO ints VALUES (4, ${Number.MAX_SAFE_INTEGER})`);
+        const rows = await db.query("SELECT k, v FROM ints ORDER BY k");
+        expect(rows.map(normalize)).toEqual([
+          { k: 1, v: 5 },
+          { k: 2, v: big },
+          { k: 3, v: -big },
+          { k: 4, v: Number.MAX_SAFE_INTEGER },
+        ]);
+        const [count] = await db.query("SELECT count(*) AS n FROM ints");
+        expectRow(count, { n: 4 });
+      } finally {
+        await db.close();
+      }
+    });
+
+    // Requirement: a DECIMAL keeps its value. Its JS type is the engine's (number on SQLite and
+    // DuckDB, an exact decimal string on PGlite), so the check compares numeric values.
+    it("a DECIMAL round-trips to the same numeric value", async () => {
+      const db = await makeDb();
+      try {
+        await db.exec("CREATE TABLE decs (k INTEGER, v DECIMAL(10,2))");
+        await db.exec("INSERT INTO decs VALUES (1, 1.25)");
+        await db.query(`INSERT INTO decs VALUES (2, ${placeholder})`, [-2.5]);
+        const rows = await db.query<{ v: unknown }>("SELECT v FROM decs ORDER BY k");
+        for (const { v } of rows) expect(["number", "string"]).toContain(typeof v);
+        expect(rows.map(({ v }) => Number(v))).toEqual([1.25, -2.5]);
+      } finally {
+        await db.close();
+      }
+    });
+
+    // Requirement: a Date parameter keeps its instant. It comes back as a Date where the engine
+    // has a timestamp type (DuckDB, PGlite) and as ISO 8601 UTC text on SQLite.
+    it("a Date parameter round-trips to the same instant", async () => {
+      const db = await makeDb();
+      try {
+        await db.exec("CREATE TABLE dates (v TIMESTAMP)");
+        const date = new Date(Date.UTC(2024, 0, 2, 3, 4, 5, 678));
+        await db.query(`INSERT INTO dates VALUES (${placeholder})`, [date]);
+        const [row] = await db.query<{ v: unknown }>("SELECT v FROM dates");
+        const v = row?.v;
+        expect(v instanceof Date || typeof v === "string").toBe(true);
+        expect(new Date(v as Date | string).getTime()).toBe(date.getTime());
+      } finally {
+        await db.close();
+      }
     });
 
     // Requirement: file-backed databases persist across reopen (node-only).
@@ -202,7 +364,7 @@ export function runDbConformance(makeDb: MakeDb, options: RunDbConformanceOption
     }
     const loadNode = (specifier: string): Promise<NodeFsShim> =>
       import(/* @vite-ignore */ specifier) as Promise<NodeFsShim>;
-    const filePersistenceIt = options.skipFilePersistence ? it.skip : it;
+    const filePersistenceIt = options.skipFilePersistence ? vitestIt.skip : it;
     filePersistenceIt(
       "persists file-backed data across close and reopen on the same path",
       async () => {

@@ -44,7 +44,8 @@
   },
   "dependencies": {
     "@duckdb/node-api": "catalog:",
-    "@statewalker/db-api": "workspace:^"
+    "@statewalker/db-api": "workspace:^",
+    "@statewalker/db-sqlite": "workspace:^"
   },
   "devDependencies": {
     "@statewalker/db-tests": "workspace:^",

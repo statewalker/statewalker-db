@@ -129,6 +129,9 @@ importers:
       '@statewalker/db-api':
         specifier: workspace:^
         version: link:../db-api
+      '@statewalker/db-sqlite':
+        specifier: workspace:^
+        version: link:../db-sqlite
     devDependencies:
       '@playwright/test':
         specifier: 'catalog:'
@@ -166,6 +169,9 @@ importers:
       '@statewalker/db-api':
         specifier: workspace:^
         version: link:../db-api
+      '@statewalker/db-sqlite':
+        specifier: workspace:^
+        version: link:../db-sqlite
     devDependencies:
       '@statewalker/db-tests':
         specifier: workspace:^
@@ -191,6 +197,9 @@ importers:
       '@statewalker/db-api':
         specifier: workspace:^
         version: link:../db-api
+      '@statewalker/db-sqlite':
+        specifier: workspace:^
+        version: link:../db-sqlite
     devDependencies:
       '@electric-sql/pglite':
         specifier: 'catalog:'

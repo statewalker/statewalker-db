@@ -22,3 +22,18 @@ export const DO_UNPROBED_SCENARIOS = [
   "integers above 2^53 round-trip as bigint, safe integers come back as numbers",
   "integer numbers bind as INTEGER, other numbers as REAL",
 ];
+
+/**
+ * `runDbConformance` scenarios the real-DO run (`test:do`) skips, because of its test harness, not
+ * the driver: `remoteDb` sends every call as its own HTTP request and JSON body. Concurrent
+ * requests can reach the Durable Object out of call order, so ordering and close-during-a-call
+ * cannot be checked through it; JSON cannot carry a Uint8Array or a bigint. The same scenarios
+ * run against the driver itself on the node:sqlite fake (`do-sqlite-db.test.ts`).
+ */
+export const DO_REMOTE_UNSUPPORTED_DB_SCENARIOS = [
+  "close waits for an in-flight query, then closes",
+  "calls made after close has started reject with 'the database is closed'",
+  "concurrent calls run in call order",
+  "a BLOB parameter round-trips as a Uint8Array",
+  "integers come back as numbers when safe and as bigints beyond 2^53",
+];

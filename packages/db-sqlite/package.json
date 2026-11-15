@@ -3,7 +3,7 @@
   "version": "0.1.2",
   "private": false,
   "type": "module",
-  "description": "SQLite transactions for @statewalker/db-api: inTransaction(db, cb) and the serialised engine wrapper every SQLite driver uses.",
+  "description": "SQLite transactions for @statewalker/db-api: inTransaction(db, cb), and the serialised Db wrappers every driver builds its lifecycle on.",
   "bugs": {
     "url": "https://github.com/statewalker/statewalker-db/issues"
   },

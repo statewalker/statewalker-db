@@ -5,7 +5,9 @@
 Transactions for SQLite databases behind `Db` from `@statewalker/db-api`:
 `inTransaction(db, cb)` runs `cb` so that every statement issued through its `tx` handle commits
 together or not at all. It also holds `newSerialisedSqliteDb`, the wrapper every SQLite driver
-(`db-sqlite-node`, `db-sqlite-browser`, `db-sqlite-do`) builds its `Db` with.
+(`db-sqlite-node`, `db-sqlite-browser`, `db-sqlite-do`) builds its `Db` with, and
+`newSerialisedDb`, the engine-neutral lifecycle wrapper the DuckDB and PGlite drivers use. Both
+keep the lifecycle that the `Db` JSDoc in `@statewalker/db-api` promises.
 
 ## Why it exists
 
@@ -22,7 +24,16 @@ pnpm add @statewalker/db-sqlite
 
 | Import | Gives | Environment |
 | --- | --- | --- |
-| `@statewalker/db-sqlite` | `inTransaction`, `newSerialisedSqliteDb`, `SQLITE_TRANSACTION`; types `SqliteEngine`, `SqliteTransactionHook` | any |
+| `@statewalker/db-sqlite` | `inTransaction`, `newSerialisedDb`, `newSerialisedSqliteDb`, `SQLITE_TRANSACTION`; types `SerialisedDbEngine`, `SqliteEngine`, `SqliteTransactionHook` | any |
+
+`newSerialisedDb(engine, { name })` wraps an asynchronous `SerialisedDbEngine` (`query(sql,
+params)`, `exec(sql)`, optional `flush()`, `close()`) as a `Db`: calls run one at a time in call
+order; `close()` waits for the calls made before it, then closes the engine once; a call made once
+`close()` has started rejects with `<name>: the database is closed`; a second `close()` is a
+no-op; integers in rows come back as numbers within ±(2^53 - 1) and as bigints beyond, also
+inside arrays and plain objects. It lives here, not in `@statewalker/db-api`, because that
+package is types-only; it has no SQLite code in it, so a DuckDB or PGlite driver depends on this
+package without pulling in any engine.
 
 `inTransaction(db, cb)` returns what `cb` returns. If `cb` throws, everything it wrote is rolled
 back and the same error is rethrown; so is a failing `COMMIT` (a deferred foreign key, for
@@ -72,8 +83,10 @@ await db.close();
   Db, for **an object that wraps a SQLite Db** (copying `query`/`exec`/`close` drops the hook —
   pass the driver's Db, or a spread copy `{ ...db }`, which keeps symbol keys), and for the `tx`
   handle itself: **nested transactions are not supported**.
-- **One call at a time.** Every `query`, `exec`, `close` and transaction goes through one queue,
-  in call order. A plain `db.exec` issued while another flow's transaction is open waits; it never
+- **One call at a time.** Every `query`, `exec`, `close` and transaction goes through one queue
+  (the one `newSerialisedDb` uses), in call order. A call made once `close()` has started rejects
+  at once with `db-sqlite: the database is closed`; `close()` itself waits for earlier calls,
+  and a second `close()` is a no-op. A plain `db.exec` issued while another flow's transaction is open waits; it never
   joins that transaction, so a rollback cannot take it down. `close` waits for a running
   transaction.
 - **The `tx` handle expires.** After the callback settles, `tx.query` rejects with

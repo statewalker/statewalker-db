@@ -23,6 +23,10 @@ runDbConformance(() => newBrowserDuckDb(), {
   placeholder: "$1",
   normalizeRow: (row) => ({ ...row }),
   skipFilePersistence: true,
+  // duckdb-wasm JSON-encodes parameters, so a Uint8Array cannot be bound (it
+  // rejects with a clear TypeError, tested below); reading a BLOB back as a
+  // Uint8Array is checked under "result values".
+  skip: ["a BLOB parameter round-trips as a Uint8Array"],
 });
 
 // Dialect-specific browser behavior the shared suite does not cover: DuckDB's
@@ -189,7 +193,7 @@ describe("newBrowserDuckDb", () => {
     it("returns plain JS values like db-duckdb-node", async () => {
       db = await newBrowserDuckDb();
       const [row] = await db.query<Record<string, unknown>>(
-        "SELECT 1.25::DECIMAL(10,2) AS d, DATE '2024-01-02' AS dt, TIMESTAMP '2024-01-02 03:04:05.123' AS ts, [1,2] AS l, {'a': 1, 'b': [2]} AS s, 5::BIGINT AS b",
+        "SELECT 1.25::DECIMAL(10,2) AS d, DATE '2024-01-02' AS dt, TIMESTAMP '2024-01-02 03:04:05.123' AS ts, [1,2] AS l, {'a': 1, 'b': [2]} AS s, 5::BIGINT AS b, [5, 9007199254740993]::BIGINT[] AS bl, '\\x01\\xFF'::BLOB AS x",
       );
       expect(row).toEqual({
         d: 1.25,
@@ -197,9 +201,14 @@ describe("newBrowserDuckDb", () => {
         ts: new Date("2024-01-02T03:04:05.123Z"),
         l: [1, 2],
         s: { a: 1, b: [2] },
-        b: 5n,
+        // Safe integers come back as numbers, larger ones as bigints (the Db contract).
+        b: 5,
+        bl: [5, 9007199254740993n],
+        x: new Uint8Array([1, 255]),
       });
       expect(Array.isArray(row?.l)).toBe(true);
+      // The conformance suite cannot bind a BLOB here (duckdb-wasm JSON-encodes parameters).
+      expect(row?.x).toBeInstanceOf(Uint8Array);
     });
   });
 

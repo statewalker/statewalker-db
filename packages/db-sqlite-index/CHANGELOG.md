@@ -1,5 +1,15 @@
 # @statewalker/db-sqlite-index
 
+## 0.1.1
+
+### Patch Changes
+
+- Release of the changes since the last published version:
+  
+  - files changed: dist/ngram.d.mts.map, dist/ngram.mjs, dist/ngram.mjs.map, dist/prefix-CTeW1EwH.mjs, dist/prefix-CTeW1EwH.mjs.map, 7 more
+- Updated dependencies
+  - @statewalker/db-api@0.1.5
+
 ## 0.1.0
 
 ### Minor Changes

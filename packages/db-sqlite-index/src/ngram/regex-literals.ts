@@ -297,9 +297,12 @@ function parseLiteralClass(src: string, start: number, end: number): string[] | 
     const c = src[i] ?? "";
     if (c === "\\") {
       const next = src[i + 1];
-      if (next === undefined || /[a-zA-Z]/.test(next)) return null;
-      chars.add(next);
+      // Letters are classes or code escapes; digits are octal escapes without the `u` flag.
+      if (next === undefined || /[a-zA-Z0-9]/.test(next)) return null;
       i += 2;
+      // `[\.-z]`: the escape starts a range, not three literals.
+      if (src[i] === "-" && i + 1 < lastInside) return null;
+      chars.add(next);
       continue;
     }
     if (i + 2 < lastInside && src[i + 1] === "-") return null;

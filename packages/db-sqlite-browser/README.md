@@ -78,7 +78,12 @@ five databases if their writes do not overlap.
   second worker (or tab) opening the same `path` fails with an OPFS lock error until the first
   one is terminated.
 - **Calls are queued** and transactions open with `BEGIN IMMEDIATE` (see `@statewalker/db-sqlite`).
-  Rows are plain objects; BLOBs are `Uint8Array`.
+  Rows are plain objects; BLOBs are `Uint8Array`; an integer above 2^53 is a `bigint`, smaller
+  ones are numbers.
+- **`query` runs one statement.** SQL with a second statement, or empty SQL, rejects before the
+  engine runs it; `true`/`false`, `undefined` and `Date` parameters bind as `1`/`0`, `NULL` and
+  ISO 8601 text. This comes from `@statewalker/db-sqlite`, the same on every SQLite driver. Use
+  `exec` for scripts.
 - **The engine loads once per `wasmUrl`.** A failed load (a wrong `wasmUrl`, a network error) is
   not cached: the next call tries again. The same holds for the OPFS pool: after an open failed
   with the OPFS lock error, a later open in the same worker works once the other worker is gone.

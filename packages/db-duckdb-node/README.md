@@ -45,7 +45,31 @@ await db.close();
 - **One instance, one connection.** The factory creates a `DuckDBInstance`
   and a single connection; `close()` closes both synchronously.
 - **Parameters.** With parameters, `query` prepares the statement, binds the
-  array and runs it. Both `$1` and `?` placeholders work.
+  array and runs it, then destroys the prepared statement. Both `$1` and `?`
+  placeholders work. Supported parameter values:
+
+  | JS value | Bound as |
+  | --- | --- |
+  | `null` | `NULL` |
+  | `boolean` | `BOOLEAN` |
+  | `number` | `INTEGER` (or `BIGINT` outside 32 bits) when integral, else `DOUBLE` |
+  | `bigint` | `HUGEINT` |
+  | `string` | `VARCHAR` |
+  | `Uint8Array` (and `Buffer`) | `BLOB` |
+  | `Date` | `TIMESTAMP` (UTC, microsecond precision), or `TIMESTAMPTZ` where the statement expects one (also as the items of a `TIMESTAMPTZ[]`), so the instant is kept whatever the session time zone; an invalid `Date` throws |
+  | array, or a non-byte typed array such as `Float32Array` | `LIST`, recursively; the item type comes from all items, so `[0, 0.5]` is `DOUBLE[]` |
+
+  DuckDB casts these to the column or the cast type, so an array binds into a
+  `FLOAT[3]` or `INTEGER[]` column and `$1::FLOAT[3]` works. An empty array
+  needs a known list type: a `LIST` column or a cast such as `$1::INTEGER[]`.
+  Other `@duckdb/node-api` values (`DuckDBValue`) pass through unchanged.
+  A `Date` keeps its instant in a `TIMESTAMPTZ` position only when DuckDB reports
+  the parameter's type. It does not for a cast array subscripted in the same
+  expression (`($1::TIMESTAMPTZ[2])[1]`): there, the Date binds as `TIMESTAMP` and
+  is read in the session time zone. Bind into a column or cast without the subscript.
+- **One statement per `query`.** `query` rejects SQL holding several
+  statements (`query() runs one statement, ...`) instead of returning only the
+  first one's rows; run scripts with `exec`.
 - **Rows are plain JS objects** (`getRowObjectsJS()`). DuckDB `BIGINT` values,
   including `count(*)`, come back as `bigint`, not `number`.
 - **Errors are DuckDB's.** A bad path rejects with

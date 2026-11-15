@@ -25,7 +25,24 @@ pnpm add @statewalker/db-sqlite
 | `@statewalker/db-sqlite` | `inTransaction`, `newSerialisedSqliteDb`, `SQLITE_TRANSACTION`; types `SqliteEngine`, `SqliteTransactionHook` | any |
 
 `inTransaction(db, cb)` returns what `cb` returns. If `cb` throws, everything it wrote is rolled
-back and the same error is rethrown. While it runs, other calls on `db` wait for it.
+back and the same error is rethrown; so is a failing `COMMIT` (a deferred foreign key, for
+example), which rejects with SQLite's error. While it runs, other calls on `db` wait for it.
+
+Every SQLite driver handles input the same way, because the wrapper does it before the engine
+sees the call (on the Db and on the `tx` handle alike):
+
+| Input | Result |
+| --- | --- |
+| `query` with more than one statement (`"INSERT …; SELECT …"`) | rejects with `db-sqlite: query runs one statement, and this SQL has more after the first; …`; none of it runs. Use `exec` for scripts |
+| empty SQL in `query` or `exec` (only whitespace, comments or `;`) | rejects with `db-sqlite: the SQL is empty (only whitespace, comments or semicolons)` |
+| `true` / `false` parameter | binds `1` / `0` |
+| `undefined` parameter | binds `NULL` |
+| `Date` parameter | binds its ISO 8601 UTC text, `date.toISOString()` (`"2026-01-02T03:04:05.006Z"`), which SQLite date functions read; an invalid Date rejects with `db-sqlite: parameter N is an invalid Date` |
+| `bigint` parameter | binds as an integer |
+| integer in a result | a `number` within ±(2^53 - 1), a `bigint` beyond, so no value loses precision |
+
+A trailing `;`, comments, and semicolons inside literals or a `CREATE TRIGGER … BEGIN … END` body
+do not count as a second statement. Other parameter types go to the engine unchanged.
 
 ## Examples
 
@@ -70,9 +87,14 @@ await db.close();
 - **Row counts.** There is no "rows changed" result: use `SELECT changes()` or `RETURNING` inside
   the transaction. Id lists longer than 100 go in one JSON parameter through `json_each(?)` —
   Durable Objects reject more than 100 bound parameters with `too many SQL variables`.
-- **`SqliteEngine` is the driver seam.** `all` must run exactly one statement and return BLOBs as
-  `Uint8Array`; `exec` must run every statement of the string; `transaction` is given only by
+- **`SqliteEngine` is the driver seam.** `all` is given one non-empty statement with normalised
+  parameters, and returns BLOBs as `Uint8Array` and integers as numbers or bigints (an engine
+  should read an integer above 2^53 as a bigint rather than throw; the wrapper turns safe ones into
+  numbers); `exec` must run every statement of a non-empty string; `transaction` is given only by
   engines that cannot run `BEGIN IMMEDIATE`.
+- **How the statements are counted.** `query` checks its SQL with a port of SQLite's own
+  `sqlite3_complete()` scanner (literals, quoted identifiers, comments, trigger bodies), not by
+  splitting on `;`.
 - **Dependencies:** `@statewalker/db-api` (types only).
 
 ## License

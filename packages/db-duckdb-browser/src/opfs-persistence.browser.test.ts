@@ -15,7 +15,7 @@ import { newBrowserDuckDb } from "./browser-duckdb.js";
  * the duckdb-wasm worker and wasm files from node_modules through `?url`
  * imports, as the README documents. The jsDelivr worker crashes on OPFS I/O.
  *
- * KNOWN BUG — both cases are `it.fails` until it is fixed (drop `.fails` then):
+ * KNOWN BUG — both cases are `it.fails` until statewalker-db#74 is fixed (drop `.fails` then):
  * with @duckdb/duckdb-wasm 1.33.1-dev57.0 nothing reaches OPFS. On `OPEN` of an
  * `opfs://` path the worker creates `<name>` and `<name>.wal` (0 bytes) and
  * registers their sync access handles only when `handle.getSize()` is non-zero

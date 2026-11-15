@@ -29,8 +29,8 @@ export const browserStartEnv: DuckDbStartEnv = {
 /**
  * Start a worker, instantiate DuckDB in it, open `path` if given, and connect.
  *
- * If any step fails, the engine and its worker are terminated before the
- * error is rethrown, so a failed start leaves no worker running. The Blob URL
+ * If any step fails, including the worker script failing to load, the engine
+ * and its worker are terminated before the error is rethrown, so a failed start leaves no worker running. The Blob URL
  * of the jsDelivr shim is revoked whether the start succeeds or fails.
  */
 export async function startDuckDb(
@@ -42,6 +42,14 @@ export async function startDuckDb(
   let blobUrl: string | undefined;
   let worker: Worker | undefined;
   let db: duckdb.AsyncDuckDB | undefined;
+  // duckdb-wasm only logs a worker error (a script that fails to load) and drops the pending
+  // request, so `instantiate` would never settle: turn the error event into a rejection.
+  let onWorkerError: ((event: ErrorEvent) => void) | undefined;
+  const workerFailed = new Promise<never>((_, reject) => {
+    onWorkerError = (event) =>
+      reject(new Error(`DuckDB worker failed to load: ${event.message ?? "unknown error"}`));
+  });
+  workerFailed.catch(() => {}); // only observed through the race below
   try {
     // OPFS file I/O needs a same-origin worker. Self-hosted bundles give a
     // same-origin URL we load directly; the jsDelivr fallback is cross-origin
@@ -56,8 +64,9 @@ export async function startDuckDb(
       );
       worker = env.newWorker(blobUrl);
     }
+    worker.addEventListener("error", onWorkerError as (event: ErrorEvent) => void);
     db = env.newDb(worker);
-    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    await Promise.race([db.instantiate(bundle.mainModule, bundle.pthreadWorker), workerFailed]);
     if (path) {
       try {
         await db.open({ path, accessMode: duckdb.DuckDBAccessMode.READ_WRITE });
@@ -75,6 +84,7 @@ export async function startDuckDb(
     worker?.terminate();
     throw error;
   } finally {
+    worker?.removeEventListener("error", onWorkerError as (event: ErrorEvent) => void);
     if (blobUrl) env.revokeObjectURL(blobUrl);
   }
 }

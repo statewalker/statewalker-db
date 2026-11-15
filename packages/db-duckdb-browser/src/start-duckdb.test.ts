@@ -17,7 +17,16 @@ interface FakeEngine {
 
 /** A start environment of fakes: no Worker, no WASM, every call recorded. */
 function fakeEnv(engine: Partial<FakeEngine> = {}) {
-  const worker = { terminate: vi.fn() };
+  const listeners = new Map<string, (event: unknown) => void>();
+  const worker = {
+    terminate: vi.fn(),
+    addEventListener: vi.fn((type: string, fn: (event: unknown) => void) =>
+      listeners.set(type, fn),
+    ),
+    removeEventListener: vi.fn((type: string) => listeners.delete(type)),
+    /** Fire a worker event, as the browser does when the worker script fails to load. */
+    emit: (type: string, event: unknown) => listeners.get(type)?.(event),
+  };
   const db: FakeEngine = {
     instantiate: vi.fn().mockResolvedValue(undefined),
     open: vi.fn().mockResolvedValue(undefined),
@@ -52,6 +61,24 @@ describe("startDuckDb", () => {
     expect(worker.terminate).toHaveBeenCalled();
     expect(db.terminate).toHaveBeenCalled();
     expect(env.revokeObjectURL).toHaveBeenCalledWith("blob:worker-shim");
+  });
+
+  it("rejects and cleans up when the worker script fails to load (instantiate never settles)", async () => {
+    // duckdb-wasm only logs a worker error and drops the pending INSTANTIATE request.
+    const { env, worker, db } = fakeEnv({ instantiate: vi.fn(() => new Promise(() => {})) });
+    const started = startDuckDb(bundle, { selfHosted: false }, env);
+    await Promise.resolve();
+    worker.emit("error", { message: "importScripts failed" });
+    await expect(started).rejects.toThrow(/DuckDB worker failed to load: importScripts failed/);
+    expect(worker.terminate).toHaveBeenCalled();
+    expect(db.terminate).toHaveBeenCalled();
+    expect(env.revokeObjectURL).toHaveBeenCalledWith("blob:worker-shim");
+  });
+
+  it("stops listening for worker errors once started", async () => {
+    const { env, worker } = fakeEnv();
+    await startDuckDb(bundle, { selfHosted: true }, env);
+    expect(worker.removeEventListener).toHaveBeenCalledWith("error", expect.any(Function));
   });
 
   it("terminates the worker and revokes the Blob URL when connect rejects", async () => {

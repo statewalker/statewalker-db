@@ -1,5 +1,17 @@
 # @statewalker/db-sqlite-index
 
+## 0.1.3
+
+### Patch Changes
+
+- 93cfbac: Internal refactor of `VectorIndex`: one module (`GenerationCatalog`) now owns the generation catalog (the committed state, the ids and tail tables and their in-memory copy) and is the only place that commits a state change, so the copy and storage cannot drift apart. No change to behaviour, stored format or public API.
+- 776cb39: `VectorIndex.refresh()` no longer races `compact()`, `merge()` or `upsert()`. It waits for a running compact or merge, runs between writes, and swaps the segment list under the read epoch. Before, a refresh overlapping a compact installed the state from before the commit with the tail from after it: the compacted vectors vanished from search, the next compact failed on a reused generation, and the next write persisted the stale state, so a reopened index deleted the compacted segment for good (#26).
+- Updated dependencies [a1a5c00]
+- Updated dependencies [a1a5c00]
+- Updated dependencies [e70e7fd]
+  - @statewalker/db-api@0.1.7
+  - @statewalker/db-sqlite@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes

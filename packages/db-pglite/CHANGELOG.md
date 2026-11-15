@@ -1,5 +1,19 @@
 # @statewalker/db-pglite
 
+## 0.3.0
+
+### Minor Changes
+
+- a1a5c00: The `Db` keeps the shared lifecycle contract (`newSerialisedDb` from `@statewalker/db-sqlite`): calls run one at a time in call order; `close()` waits for in-flight calls, then closes PGlite; calls made after `close()` has started reject with `db-pglite: the database is closed`; closing twice is a no-op. Integers within ±(2^53 - 1) come back as `number`, larger ones as `bigint`.
+
+### Patch Changes
+
+- Updated dependencies [a1a5c00]
+- Updated dependencies [a1a5c00]
+- Updated dependencies [e70e7fd]
+  - @statewalker/db-api@0.1.7
+  - @statewalker/db-sqlite@0.1.3
+
 ## 0.2.0
 
 ### Minor Changes

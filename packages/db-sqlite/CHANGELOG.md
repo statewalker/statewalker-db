@@ -1,5 +1,14 @@
 # @statewalker/db-sqlite
 
+## 0.1.3
+
+### Patch Changes
+
+- a1a5c00: Adds `newSerialisedDb(engine, { name })` and the `SerialisedDbEngine` type: the engine-neutral lifecycle wrapper (one call at a time in call order, `close()` waits for earlier calls, later calls reject with `<name>: the database is closed`, closing twice is a no-op, safe integers as numbers) that the DuckDB and PGlite drivers now share with `newSerialisedSqliteDb`. SQLite Dbs now reject a call made after `close()` has started at once instead of after the queue drains (same error).
+- e70e7fd: Reject a parameter SQLite cannot bind (a plain object, `Map`, array, function, symbol or boxed primitive) with a `TypeError` naming its 1-based index and type, before anything runs, on the Db and on the transaction handle. db-sqlite-node and db-sqlite-do used to drop a leading object and bind the other parameters one column to the left. An `ArrayBuffer` and every ArrayBuffer view (`DataView`, `Float32Array`, …) now bind as a BLOB of exactly their bytes on every SQLite driver.
+- Updated dependencies [a1a5c00]
+  - @statewalker/db-api@0.1.7
+
 ## 0.1.2
 
 ### Patch Changes

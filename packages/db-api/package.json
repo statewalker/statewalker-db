@@ -1,6 +1,6 @@
 {
   "name": "@statewalker/db-api",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": false,
   "type": "module",
   "description": "Minimal database interface (query, exec, optional flush, close) implemented by every @statewalker/db-* driver.",

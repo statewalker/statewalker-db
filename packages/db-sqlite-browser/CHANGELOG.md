@@ -1,5 +1,16 @@
 # @statewalker/db-sqlite-browser
 
+## 0.2.4
+
+### Patch Changes
+
+- 5f748c9: Depend on `@statewalker/db-sqlite` ^0.1.3 and `@statewalker/db-api` ^0.1.7, the releases with the parameter validation (#25) and the shared lifecycle (#45).
+- Updated dependencies [a1a5c00]
+- Updated dependencies [a1a5c00]
+- Updated dependencies [e70e7fd]
+  - @statewalker/db-api@0.1.7
+  - @statewalker/db-sqlite@0.1.3
+
 ## 0.2.3
 
 ### Patch Changes

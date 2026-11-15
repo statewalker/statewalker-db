@@ -3,7 +3,9 @@ import { newDoSqliteDb } from "@statewalker/db-sqlite-do";
 import { newFakeDoStorage } from "@statewalker/db-sqlite-do/fake";
 import { newNodeSqliteDb } from "@statewalker/db-sqlite-node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { foldIdentity } from "./fold.js";
 import { type NgramItem, type NgramSearchOptions, NgramStore } from "./index.js";
+import { encodeGram, gramsOf } from "./trigrams.js";
 
 const DRIVERS: Array<[string, () => Promise<Db>]> = [
   ["node:sqlite", () => newNodeSqliteDb()],
@@ -264,6 +266,116 @@ for (const [driverName, newDb] of DRIVERS) {
         expect(await index.getTexts([3, 7, 99])).toEqual(new Map([[3, "three"]]));
         const [row] = await db.query<{ n: number }>(`SELECT count(*) AS n FROM ${index.idTable}`);
         expect(Number(row?.n)).toBe(1);
+      });
+
+      /**
+       * Simulates an index written by a runtime whose case folding differed: its grams
+       * were built with `oldFold`, and its meta records `identity` (or none, if null).
+       */
+      const writeAsOldRuntime = async (
+        oldFold: (text: string) => string,
+        identity: string | null,
+      ) => {
+        const ids = await db.query<{ id: number }>("SELECT id FROM t_texts");
+        const texts = await index.getTexts(ids.map((row) => Number(row.id)));
+        if (store === "fts5") {
+          await db.query("INSERT INTO t_ng(t_ng) VALUES ('delete-all')");
+          for (const [id, text] of texts)
+            await db.query("INSERT INTO t_ng(rowid, text) VALUES (?, ?)", [id, oldFold(text)]);
+        } else {
+          await db.query("DELETE FROM t_grams");
+          for (const [id, text] of texts)
+            for (const gram of new Set(gramsOf(oldFold(text))))
+              await db.query("INSERT INTO t_grams(gram, id) VALUES (?, ?)", [encodeGram(gram), id]);
+        }
+        await db.query("DELETE FROM t_meta WHERE key = 'fold'");
+        if (identity !== null)
+          await db.query("INSERT INTO t_meta(key, value) VALUES ('fold', ?)", [identity]);
+      };
+      /** Ids holding the exact gram `gram` (not folded), read from the store's own table. */
+      const rawIds = async (gram: string) => {
+        const rows =
+          store === "fts5"
+            ? await db.query<{ id: number }>(
+                "SELECT rowid AS id FROM t_ng WHERE t_ng MATCH ? ORDER BY rowid",
+                [`"${gram}"`],
+              )
+            : await db.query<{ id: number }>("SELECT id FROM t_grams WHERE gram = ? ORDER BY id", [
+                encodeGram(gram),
+              ]);
+        return rows.map((row) => Number(row.id));
+      };
+      const recordedFold = async () =>
+        (await db.query<{ value: string }>("SELECT value FROM t_meta WHERE key = 'fold'"))[0]
+          ?.value;
+      const assertIntegrity = async () => {
+        if (store === "fts5") await db.query("INSERT INTO t_ng(t_ng) VALUES ('integrity-check')");
+        else {
+          const [row] = await db.query<{ n: number }>(
+            "SELECT count(*) AS n FROM t_grams WHERE id NOT IN (SELECT id FROM t_texts)",
+          );
+          expect(Number(row?.n)).toBe(0);
+        }
+      };
+      const unfolded = (text: string) => text;
+
+      it("records the fold identity when the index is created", async () => {
+        expect(await recordedFold()).toBe(foldIdentity());
+      });
+
+      it("a different recorded fold identity rebuilds the grams from the stored text", async () => {
+        await index.upsert(items(["Hello WORLD", "ΟΔΟΣ οδός", "keep THIS"]));
+        await writeAsOldRuntime(unfolded, "fold-v1:old-runtime");
+        expect(await rawIds("WOR")).toEqual([1]);
+
+        const reopened = new NgramStore({ db, prefix: "t_", store });
+        await reopened.init();
+        expect(await recordedFold()).toBe(foldIdentity());
+        expect(await rawIds("WOR")).toEqual([]);
+        expect(await rawIds("wor")).toEqual([1]);
+
+        // A contentless FTS5 'delete' with tokens that do not match the inserted ones leaves
+        // them behind (integrity-check does not notice): the grams must be gone for good.
+        await reopened.delete([1]);
+        await assertIntegrity();
+        expect(await rawIds("WOR")).toEqual([]);
+        expect(await rawIds("wor")).toEqual([]);
+        expect(await rawIds("hel")).toEqual([]);
+        expect(
+          (await reopened.search("ΟΔΟΣ", { caseSensitive: false })).hits.map((h) => h.id),
+        ).toEqual([2]);
+        expect(
+          (await reopened.search("this", { caseSensitive: false })).hits.map((h) => h.id),
+        ).toEqual([3]);
+        await reopened.upsert([{ id: 3, text: "other" }]);
+        await assertIntegrity();
+        expect(await rawIds("thi")).toEqual([]);
+      });
+
+      it("a fold-change rebuild re-indexes every text, in batches", async () => {
+        await index.upsert(TRGM);
+        await writeAsOldRuntime((text) => text.toUpperCase(), "fold-v1:old-runtime");
+        await new NgramStore({ db, prefix: "t_", store }).init();
+        expect(await rawIds("QWE")).toEqual([]);
+        expect(await rawIds("qwe")).toHaveLength(TRGM.length);
+        expect((await index.search("u0999")).hits.map((h) => h.id)).toEqual([999]);
+      });
+
+      it("an index without a recorded fold identity gets one and is not rebuilt", async () => {
+        await index.upsert(items(["Hello WORLD"]));
+        await writeAsOldRuntime(unfolded, null);
+        const reopened = new NgramStore({ db, prefix: "t_", store });
+        await reopened.init();
+        expect(await recordedFold()).toBe(foldIdentity());
+        // Grams written by the "old runtime" are still there: no rebuild ran.
+        expect(await rawIds("WOR")).toEqual([1]);
+      });
+
+      it("the same recorded fold identity does not rebuild", async () => {
+        await index.upsert(items(["Hello WORLD"]));
+        await writeAsOldRuntime(unfolded, foldIdentity());
+        await new NgramStore({ db, prefix: "t_", store }).init();
+        expect(await rawIds("WOR")).toEqual([1]);
       });
 
       it("drop from a default-store handle removes every table of either store", async () => {

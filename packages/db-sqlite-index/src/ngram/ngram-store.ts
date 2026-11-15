@@ -1,6 +1,7 @@
 import type { Db } from "@statewalker/db-api";
 import { inTransaction } from "@statewalker/db-sqlite";
 import { PREFIX_PATTERN } from "../prefix.js";
+import { foldIdentity } from "./fold.js";
 import { type GramBackend, type NgramItem, newFts5Backend } from "./fts5-backend.js";
 import { chunkJson } from "./json-chunks.js";
 import { planQuery } from "./plan-query.js";
@@ -31,6 +32,8 @@ export type NgramSearchResult = {
 export type NgramStoreOptions = { db: Db; prefix: string; store?: "fts5" | "postings" };
 
 const VERIFY_BATCH = 256;
+/** Texts re-indexed per step when the grams are rebuilt after a fold change. */
+const REBUILD_BATCH = 256;
 
 export class NgramStore {
   /** `{prefix}texts`: its `id` column holds exactly the stored ids. Callers may join it in SQL. */
@@ -73,7 +76,41 @@ export class NgramStore {
         `CREATE TABLE IF NOT EXISTS ${p}texts(id INTEGER PRIMARY KEY, text TEXT NOT NULL)`,
       );
       await this.#backend.create(tx);
+      await this.#checkFold(tx);
     });
+  }
+
+  /**
+   * The grams were built with `fold` as the runtime that wrote them defined it, and
+   * an fts5 delete replays them; if this runtime folds differently, they are rebuilt
+   * from the stored texts before any write. An index without a recorded identity
+   * (written before it was recorded) is assumed to match and is not rebuilt.
+   */
+  async #checkFold(tx: Db): Promise<void> {
+    const p = this.#prefix;
+    const identity = foldIdentity();
+    const [row] = await tx.query<{ value: string }>(
+      `SELECT value FROM ${p}meta WHERE key = 'fold'`,
+    );
+    if (row?.value === identity) return;
+    if (row) await this.#rebuild(tx);
+    await tx.query(`INSERT OR REPLACE INTO ${p}meta(key, value) VALUES ('fold', ?)`, [identity]);
+  }
+
+  async #rebuild(tx: Db): Promise<void> {
+    await this.#backend.clear(tx);
+    let after: number | null = null;
+    for (;;) {
+      const rows: Array<{ id: number; text: string }> = await tx.query(
+        `SELECT id, text FROM ${this.#prefix}texts WHERE ? IS NULL OR id > ? ORDER BY id LIMIT ?`,
+        [after, after, REBUILD_BATCH],
+      );
+      const batch = rows.map((r) => ({ id: Number(r.id), text: String(r.text) }));
+      const last = batch.at(-1);
+      if (!last) return;
+      await this.#backend.add(tx, batch);
+      after = last.id;
+    }
   }
 
   async upsert(items: NgramItem[]): Promise<void> {

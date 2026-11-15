@@ -304,11 +304,13 @@ export class VectorIndex {
         pending = [];
         for (const { p, cands } of rounds) {
           const live = cands.filter((c) => gens.get(c.id) === p.seg.gen);
-          if (live.length < perList && cands.length === p.limit) {
+          // A list passed whole comes in row order: keep all of it, the int8 re-rank ranks it.
+          const whole = p.seg.passesWhole(p.data.ids.length, p.limit);
+          if (!whole && live.length < perList && cands.length === p.limit) {
             pending.push({ ...p, limit: p.limit * 2 }); // some were dead and more rows remain
             continue;
           }
-          for (const cand of live.slice(0, perList))
+          for (const cand of whole ? live : live.slice(0, perList))
             hits.push({ ...cand, seg: p.seg, data: p.data });
         }
       }

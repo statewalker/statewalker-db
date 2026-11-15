@@ -9,6 +9,9 @@ jobs:
   ci:
     uses: statewalker/statewalker-ci/.github/workflows/ci.yml@main
     with:
+      baseline: library
+      secret-scan: true
+      api-diff: true
       release-path: true
 
   # Releases to npm in three jobs: `version` opens the version pull request, `pack` packs what

@@ -269,6 +269,16 @@ describe.each(PACKAGES)("$name installs and imports as an external consumer", (t
         result,
         `${specifier} must import${target.typesOnly ? "" : " and export something"}`,
       ).toContain("OK");
+
+      // CommonJS consumers load the ESM build through require(esm) (Node 20.19+, 22.12+), which
+      // needs an exports condition that `require` matches: `default` (statewalker-db#50).
+      writeFileSync(
+        join(scratch, "probe.cjs"),
+        `const m = require(${JSON.stringify(specifier)});
+        console.log(typeof m === "object" && m !== null ? "OK" : "NOT AN OBJECT");`,
+      );
+      const required = execFileSync("node", ["probe.cjs"], { cwd: scratch, encoding: "utf8" });
+      expect(required, `${specifier} must load with require()`).toContain("OK");
     }
   });
 

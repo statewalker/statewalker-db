@@ -185,6 +185,56 @@ describe("newBrowserDuckDb", () => {
     });
   });
 
+  describe("result values", () => {
+    it("returns plain JS values like db-duckdb-node", async () => {
+      db = await newBrowserDuckDb();
+      const [row] = await db.query<Record<string, unknown>>(
+        "SELECT 1.25::DECIMAL(10,2) AS d, DATE '2024-01-02' AS dt, TIMESTAMP '2024-01-02 03:04:05.123' AS ts, [1,2] AS l, {'a': 1, 'b': [2]} AS s, 5::BIGINT AS b",
+      );
+      expect(row).toEqual({
+        d: 1.25,
+        dt: new Date("2024-01-02T00:00:00.000Z"),
+        ts: new Date("2024-01-02T03:04:05.123Z"),
+        l: [1, 2],
+        s: { a: 1, b: [2] },
+        b: 5n,
+      });
+      expect(Array.isArray(row?.l)).toBe(true);
+    });
+  });
+
+  describe("parameter binding", () => {
+    it("binds a fetched BIGINT id back as a parameter", async () => {
+      db = await newBrowserDuckDb();
+      await db.exec("CREATE TABLE ids (id BIGINT, n VARCHAR)");
+      await db.exec("INSERT INTO ids VALUES (9007199254740993, 'a'), (5, 'b')");
+      const [first] = await db.query<{ id: bigint }>("SELECT id FROM ids WHERE n = 'a'");
+      expect(first?.id).toBe(9007199254740993n);
+      const rows = await db.query("SELECT n FROM ids WHERE id = $1", [first?.id]);
+      expect(rows).toEqual([{ n: "a" }]);
+    });
+
+    it("binds a Date as a timestamp", async () => {
+      db = await newBrowserDuckDb();
+      await db.exec("CREATE TABLE events (ts TIMESTAMP, n VARCHAR)");
+      await db.exec("INSERT INTO events VALUES (TIMESTAMP '2024-01-02 03:04:05', 'a')");
+      const rows = await db.query("SELECT n FROM events WHERE ts = $1", [
+        new Date("2024-01-02T03:04:05.000Z"),
+      ]);
+      expect(rows).toEqual([{ n: "a" }]);
+    });
+
+    it("rejects unsupported parameter types with a clear error", async () => {
+      db = await newBrowserDuckDb();
+      await expect(db.query("SELECT $1 AS x", [new Uint8Array([1])])).rejects.toThrow(
+        /parameter \$1 of type Uint8Array/,
+      );
+      await expect(db.query("SELECT $1 AS x", [[1, 2]])).rejects.toThrow(
+        /parameter \$1 of type array/,
+      );
+    });
+  });
+
   describe("persistent path", () => {
     afterEach(() => {
       vi.unstubAllGlobals();

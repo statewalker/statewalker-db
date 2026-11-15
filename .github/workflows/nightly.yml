@@ -1,0 +1,24 @@
+name: Nightly
+
+# The suites the per-PR CI does not run: the browser drivers in headless Chromium
+# (test:browser) and the Durable Object driver on a real celld (test:do). A failure opens one
+# `bug` + `ci-baseline` issue here, or comments on the open one (statewalker-ci's nightly.yml).
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  nightly:
+    uses: statewalker/statewalker-ci/.github/workflows/nightly.yml@main
+    with:
+      # Chromium for test:browser; celld 0.6.x for test:do (installed into ~/.local/bin, which is
+      # on the runner's PATH). The DuckDB browser tests load its WASM bundle from jsDelivr.
+      setup: >-
+        pnpm --filter @statewalker/db-sqlite-browser exec playwright install --with-deps chromium &&
+        curl -fsSL https://celld.dev/install.sh | CELLD_VERSION=v0.6.3 sh &&
+        celld --version

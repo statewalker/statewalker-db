@@ -35,6 +35,48 @@ pnpm add @statewalker/db-duckdb-browser
 The returned `Db` implements `query`, `exec`, `flush` and `close`. Placeholders
 are DuckDB's (`$1`, `$2`, ...).
 
+### Result values
+
+Rows come back with the same JS values as `@statewalker/db-duckdb-node`:
+
+| DuckDB type | JS value |
+| --- | --- |
+| `DECIMAL` | `number` (scaled; `1.25::DECIMAL(10,2)` is `1.25`) |
+| `BIGINT`, `UBIGINT`, `HUGEINT`, `TIME` | `bigint` |
+| `INTEGER`, `DOUBLE`, ... | `number` |
+| `DATE`, `TIMESTAMP`, `TIMESTAMPTZ` | `Date` |
+| `LIST`, fixed-size `ARRAY` | array, converted recursively |
+| `STRUCT` | plain object, converted recursively |
+| `MAP` | array of `{ key, value }` |
+| `BLOB` | `Uint8Array` |
+
+`INTERVAL` is returned as duckdb-wasm's Arrow layer decodes it and does not
+match the node driver; cast it in SQL (for example to `VARCHAR`) if you need
+it. A `HUGEINT` and a `DECIMAL(38,0)` look the same in Arrow, so both come
+back as `bigint`.
+
+### Parameter limits
+
+duckdb-wasm passes parameters through `JSON.stringify`, so the driver converts
+them first:
+
+| JS value | Bound as |
+| --- | --- |
+| `string`, `boolean`, `null` | itself (`undefined` binds as `null`) |
+| finite `number` | `DOUBLE` |
+| `bigint` | its exact decimal string, cast by DuckDB to the column's type |
+| `Date` | its ISO 8601 string (`toISOString()`), cast to `TIMESTAMP` the same way |
+
+The string forms work where the SQL fixes the parameter's type, as in
+`WHERE id = $1` or `INSERT INTO t (id) VALUES ($1)`, so a `BIGINT` id read
+from one query can be passed back to the next. Where nothing fixes it, cast
+in SQL: `$1::BIGINT + 1`, `$1::TIMESTAMP`.
+
+`Uint8Array` and other binary data, arrays, objects, `NaN`, `Infinity` and
+invalid dates are rejected with a `TypeError` that names the parameter and its
+type (`cannot bind parameter $1 of type Uint8Array`). Insert such values with
+SQL literals, or through duckdb-wasm's own Arrow insert API.
+
 ## Examples
 
 In memory, bundle from jsDelivr:
@@ -95,11 +137,12 @@ await db.flush?.(); // CHECKPOINT: without it the insert can be lost on reload
   `Cannot open DuckDB database "<path>"`, the engine's error as `cause`. An
   in-memory database is created only when `options.path` is omitted, so data
   is never silently lost on reload.
-- **Rows.** Query results are Arrow tables; the driver copies each row's
-  fields into a plain object. Calls with parameters go through
-  `conn.prepare(sql)` and `stmt.query(...params)`, and the statement is closed
-  after each call, also when the query fails; calls without parameters use
-  `conn.query(sql)`.
+- **Rows.** Query results are Arrow tables; the driver copies each row into a
+  plain object, converting each value by its Arrow field type
+  (`src/arrow-values.ts`). Calls with parameters convert them
+  (`src/params.ts`), then go through `conn.prepare(sql)` and
+  `stmt.query(...params)`, and the statement is closed after each call, also
+  when the query fails; calls without parameters use `conn.query(sql)`.
 - **Under Node.js** the module imports, but `newBrowserDuckDb()` rejects with
   `Worker is not defined`. Use `@statewalker/db-duckdb-node` there.
 - **Dependencies:** `@duckdb/duckdb-wasm` (the engine), `@statewalker/db-api`

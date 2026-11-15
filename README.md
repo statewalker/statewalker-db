@@ -54,7 +54,7 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 4. Optional, the browser drivers in headless Chromium:
    1. `pnpm exec playwright install chromium` (once)
    2. `pnpm run test:browser`
-5. Optional, the Durable Object driver on a real celld: `pnpm run test:do` (needs celld 0.6.x on PATH).
+5. Optional, the Durable Object driver on a real celld: `pnpm run test:do` (needs celld 0.6.x on PATH; the esbuild it bundles the worker with comes from the workspace).
 6. Before pushing: `pnpm run lint:check`, `pnpm run format:check`,
    `pnpm run typecheck`, `pnpm run typecheck:tests`. CI runs these together with build and test.
 

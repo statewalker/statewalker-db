@@ -123,12 +123,12 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 
 ### Releases
 
-CI never publishes. A maintainer releases from a local checkout with
-[changesets](https://github.com/changesets/changesets): the pending changesets
-are applied (versions, `CHANGELOG.md`), the packages are published to npm, and
-the version commit is pushed to `main`. Add a changeset with `pnpm changeset`
-to choose the bump and the changelog text for your change; see
-`.changeset/README.md`.
+Packages are published to npm from CI with
+[changesets](https://github.com/changesets/changesets): after CI passes on
+`main`, a job opens a "chore: version packages" pull request for every package
+whose packed contents differ from npm, and merging it publishes them with
+provenance. Add a changeset with `pnpm changeset` to choose the bump and the
+changelog text for your change; see `.changeset/README.md`.
 
 ### Files
 

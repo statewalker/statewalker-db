@@ -33,7 +33,7 @@
     "build": "tsdown",
     "prepack": "pnpm run build",
     "dev": "tsdown --watch",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist",
     "lint": "biome check --write .",

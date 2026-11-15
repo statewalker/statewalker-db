@@ -56,6 +56,7 @@
   "devDependencies": {
     "@statewalker/db-tests": "workspace:^",
     "@types/node": "catalog:",
+    "esbuild": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

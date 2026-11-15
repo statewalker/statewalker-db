@@ -61,6 +61,7 @@
     "@statewalker/db-sqlite-node": "workspace:^",
     "@statewalker/db-tests": "workspace:^",
     "@types/node": "catalog:",
+    "esbuild": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "tsx": "catalog:",

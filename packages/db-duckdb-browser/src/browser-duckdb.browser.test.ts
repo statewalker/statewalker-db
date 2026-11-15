@@ -236,23 +236,60 @@ describe("newBrowserDuckDb", () => {
   });
 
   describe("persistent path", () => {
+    // Same-origin bundles, as a self-hosting app would pass: the jsDelivr
+    // worker wrapped in a Blob of this page's origin.
+    function sameOriginBundles(): duckdb.DuckDBBundles {
+      const cdn = duckdb.getJsDelivrBundles();
+      const shim = (url: string) =>
+        URL.createObjectURL(new Blob([`importScripts("${url}");`], { type: "text/javascript" }));
+      return {
+        mvp: { mainModule: cdn.mvp.mainModule, mainWorker: shim(cdn.mvp.mainWorker as string) },
+        eh: cdn.eh && {
+          mainModule: cdn.eh.mainModule,
+          mainWorker: shim(cdn.eh.mainWorker as string),
+        },
+      };
+    }
+
     afterEach(() => {
       vi.unstubAllGlobals();
       vi.restoreAllMocks();
     });
 
     it("rejects instead of falling back to memory when the path cannot be opened", async () => {
-      vi.spyOn(duckdb.AsyncDuckDB.prototype, "open").mockRejectedValue(new Error("open failed"));
-      await expect(newBrowserDuckDb({ path: "opfs://broken.duckdb" })).rejects.toThrow(
-        /opfs:\/\/broken\.duckdb/,
+      const open = vi
+        .spyOn(duckdb.AsyncDuckDB.prototype, "open")
+        .mockRejectedValue(new Error("open failed"));
+      const terminate = vi.spyOn(duckdb.AsyncDuckDB.prototype, "terminate");
+      await expect(
+        newBrowserDuckDb({ path: "opfs://broken.duckdb", bundles: sameOriginBundles() }),
+      ).rejects.toThrow(/opfs:\/\/broken\.duckdb/);
+      expect(open).toHaveBeenCalled();
+      expect(terminate).toHaveBeenCalled();
+    });
+
+    it("terminates the engine when connect fails after a successful instantiate", async () => {
+      vi.spyOn(duckdb.AsyncDuckDB.prototype, "connect").mockRejectedValue(
+        new Error("connect failed"),
       );
+      const terminate = vi.spyOn(duckdb.AsyncDuckDB.prototype, "terminate");
+      await expect(newBrowserDuckDb()).rejects.toThrow("connect failed");
+      expect(terminate).toHaveBeenCalled();
+    });
+
+    it("rejects a path without self-hosted bundles before starting a worker", async () => {
+      const instantiate = vi.spyOn(duckdb.AsyncDuckDB.prototype, "instantiate");
+      await expect(newBrowserDuckDb({ path: "opfs://cdn.duckdb" })).rejects.toThrow(
+        /opfs:\/\/cdn\.duckdb": OPFS needs self-hosted `bundles`/,
+      );
+      expect(instantiate).not.toHaveBeenCalled();
     });
 
     it("rejects instead of falling back to memory when OPFS is unavailable", async () => {
       vi.stubGlobal("navigator", {});
-      await expect(newBrowserDuckDb({ path: "opfs://unavailable.duckdb" })).rejects.toThrow(
-        /opfs:\/\/unavailable\.duckdb/,
-      );
+      await expect(
+        newBrowserDuckDb({ path: "opfs://unavailable.duckdb", bundles: sameOriginBundles() }),
+      ).rejects.toThrow(/opfs:\/\/unavailable\.duckdb": OPFS is unavailable/);
     });
   });
 });

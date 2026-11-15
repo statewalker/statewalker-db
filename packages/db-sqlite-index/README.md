@@ -126,7 +126,11 @@ one and drops dead rows.
 2. A 1-bit filter keeps `k × oversample` rows per list (`oversample` default 8). It
    estimates the real metric from the signs of each vector's residual to its centroid, plus the
    residual's norm and its projection on the centroid (RaBitQ-style). This makes
-   it accurate for `dot` and `l2` too, not only `cosine`.
+   it accurate for `dot` and `l2` too, not only `cosine`. A list with no more rows than that
+   passes whole. So does a flat segment (one list, below 2048 vectors): its centroid is the
+   mean of all vectors, so the 1-bit estimate is weak on clustered data (recall@10 fell to
+   about 0.5 on 1500 vectors in 3 clusters), and scoring every row with int8 codes costs no
+   more than scanning the tail.
 3. Re-rank the survivors with int8 codes. With `exact: true`, re-rank the top
    `4k` again with the stored float32 vectors.
 

@@ -209,8 +209,23 @@ export class SegmentIndex {
   }
 
   /**
+   * Whether stage 1 passes a list of `n` rows whole (in row order, not ranked):
+   * a list no longer than `limit`, or a flat segment's only list of at most
+   * {@link MIN_TRAIN} rows. Callers must not cut such a list by position.
+   */
+  passesWhole(n: number, limit: number): boolean {
+    return n <= limit || (this.nlist === 1 && n <= MIN_TRAIN);
+  }
+
+  /**
    * Stage 1: the `limit` rows of a list with the best estimated distance, from
    * residual sign bits plus the stored residual norm and centroid projection.
+   *
+   * A flat segment (one list of at most {@link MIN_TRAIN} rows) passes every row:
+   * its centroid is the mean of all vectors, far from most of them on clustered
+   * data, so the 1-bit estimate is weakest exactly there (issue #40), while
+   * int8-scoring the whole list costs no more than scanning the tail. A list
+   * that does not exceed `limit` also passes whole, without estimating.
    */
   filterList(
     query: Float32Array,
@@ -219,6 +234,15 @@ export class SegmentIndex {
     limit: number,
     keep?: (id: number) => boolean,
   ): Candidate[] {
+    const n = data.ids.length;
+    if (this.passesWhole(n, limit)) {
+      const all: Candidate[] = [];
+      for (let r = 0; r < n; r++) {
+        const id = data.ids[r];
+        if (!keep || keep(id)) all.push({ list: c, row: r, id });
+      }
+      return all;
+    }
     const d = this.dims;
     const w = wordsFor(d);
     const co = c * d;
@@ -231,7 +255,7 @@ export class SegmentIndex {
     const angle = Math.PI / d;
     const l2 = this.metric === "l2";
     const top = new TopK<Candidate>(limit);
-    for (let r = 0; r < data.ids.length; r++) {
+    for (let r = 0; r < n; r++) {
       const id = data.ids[r];
       if (keep && !keep(id)) continue;
       const rr = qn * data.rnorm[r] * Math.cos(angle * hamming(qb, data.bits, r * w, w));

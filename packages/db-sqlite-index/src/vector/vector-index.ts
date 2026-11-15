@@ -61,6 +61,13 @@ interface TailEntry {
 
 /** Ids per lookup (bound as one JSON parameter). */
 const VALIDATE_BATCH = 2000;
+/** Lists probed per segment when the caller passes no `nprobe`. */
+const DEFAULT_NPROBE = 8;
+/**
+ * Without an explicit `nprobe`, probe lists until they hold this many times
+ * `k × oversample` rows (#67).
+ */
+const PROBE_ROWS_FACTOR = 16;
 /** Upserted rows per transaction. */
 const WRITE_BATCH = 200;
 
@@ -245,7 +252,13 @@ export class VectorIndex {
     this.#assertReady();
     opts.signal?.throwIfAborted();
     const k = opts.k ?? 10;
-    const nprobe = opts.nprobe ?? 8;
+    const perList = k * (opts.oversample ?? 8);
+    // An explicit nprobe probes exactly that many lists. The default probes at least
+    // DEFAULT_NPROBE lists and keeps going while they hold fewer than
+    // PROBE_ROWS_FACTOR × perList rows: after auto-compaction lists are small
+    // (~65 rows at 4200 vectors), and 8 of them miss neighbours spread over many (#67).
+    const nprobe = opts.nprobe ?? DEFAULT_NPROBE;
+    const minRows = opts.nprobe === undefined ? PROBE_ROWS_FACTOR * perList : 0;
     const q = prepare(query, this.dims, this.metric);
     const d = this.dims;
     const filter = opts.filter;
@@ -265,7 +278,7 @@ export class VectorIndex {
       const probed: Probed[] = [];
       await Promise.all(
         segments.map(async (seg) => {
-          const lists = seg.probe(q, nprobe);
+          const lists = seg.probe(q, nprobe, minRows);
           const datas = await this.#store.lists(seg, lists);
           lists.forEach((list, i) => {
             probed.push({ seg, list, data: datas[i] as ListData });
@@ -280,7 +293,6 @@ export class VectorIndex {
       // are excluded and the list is filtered again with a doubled limit, so dead
       // rows never take the slots of live ones (#33).
       type Hit = Candidate & { seg: SegmentIndex; data: ListData };
-      const perList = k * (opts.oversample ?? 8);
       const gens = new Map<number, number | undefined>(); // id -> live gen; undefined = deleted
       const hits: Hit[] = [];
       let pending = probed.map((p) => ({ ...p, limit: perList }));

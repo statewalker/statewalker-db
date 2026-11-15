@@ -34,8 +34,10 @@ pnpm add @statewalker/db-duckdb-browser
 - `options.path`: an OPFS path such as `opfs://app.duckdb`. Omit it for an
   in-memory database. If the path cannot be opened, the call rejects with
   `Cannot open DuckDB database "<path>"`; it never falls back to memory.
-- `options.bundles`: same-origin `DuckDBBundles` URLs. Required for OPFS.
-  Without it, the bundle is loaded from jsDelivr.
+- `options.bundles`: same-origin `DuckDBBundles` URLs. Required for OPFS:
+  `options.path` without `options.bundles` rejects with
+  `Cannot open DuckDB database "<path>": OPFS needs self-hosted \`bundles\``
+  before any worker starts. Without it, the bundle is loaded from jsDelivr.
 
 The returned `Db` implements `query`, `exec`, `flush` and `close`. Placeholders
 are DuckDB's (`$1`, `$2`, ...).
@@ -129,13 +131,19 @@ await db.flush?.(); // CHECKPOINT: without it the insert can be lost on reload
 - **Same-origin worker for OPFS.** OPFS file I/O works only in a same-origin
   worker. With `bundles`, the worker is created directly from your URL. Without
   them, the jsDelivr worker is cross-origin and is started through a Blob that
-  calls `importScripts`; that worker crashes on OPFS file I/O, so use it for
-  in-memory databases only.
+  calls `importScripts`; that worker crashes on OPFS file I/O, so the driver
+  accepts it for in-memory databases only and rejects a `path` without
+  `bundles`.
+- **A failed start leaves nothing running.** If loading the engine, opening
+  the path or connecting fails, the engine and its worker are terminated and
+  the jsDelivr Blob URL is revoked before the call rejects with the original
+  error (`src/start-duckdb.ts`).
 - **`flush` runs `CHECKPOINT`.** DuckDB WASM writes the OPFS database file only
   on `CHECKPOINT`. Writes not yet checkpointed can be lost on an abrupt
   teardown such as a page reload. On an in-memory database `flush` does
   nothing.
-- **No fallback to memory.** If `options.path` is set but `navigator.storage`
+- **No fallback to memory.** If `options.path` is set without `bundles`, the
+  call rejects before starting a worker (see above). If `navigator.storage`
   is missing, the call rejects with
   `Cannot open DuckDB database "<path>": OPFS is unavailable`. If opening the
   path throws, the worker is terminated and the call rejects with

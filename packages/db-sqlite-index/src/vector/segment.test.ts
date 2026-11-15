@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mulberry32 } from "./kmeans.js";
 import { prepare } from "./math.js";
-import { buildSegment, MIN_TRAIN, parseList, SegmentIndex } from "./segment.js";
+import { buildSegment, MAX_WIDEN_FRACTION, MIN_TRAIN, parseList, SegmentIndex } from "./segment.js";
 
 const D = 32;
 
@@ -53,6 +53,29 @@ describe("segment codec", () => {
       }
     }
     expect(best.id).toBe(1);
+  });
+
+  it("probes nprobe lists, then more in centroid order until they hold minRows rows", () => {
+    const { ids, vectors } = clustered(3000, 3);
+    const built = buildSegment({ dims: D, metric: "cosine", ids, vectors });
+    const seg = new SegmentIndex(1, D, "cosine", built.centroids, built.counts);
+    const q = vectors.subarray(0, D);
+    const rows = (lists: number[]) => lists.reduce((n, c) => n + (built.counts[c] as number), 0);
+
+    const exact = seg.probe(q, 4);
+    expect(exact.length).toBe(4);
+    expect(seg.probe(q, 4, rows(exact))).toEqual(exact); // already enough rows
+
+    const want = rows(exact) + 1;
+    const wider = seg.probe(q, 4, want);
+    expect(wider.slice(0, 4)).toEqual(exact); // same order, extended
+    expect(rows(wider)).toBeGreaterThanOrEqual(want);
+    expect(rows(wider.slice(0, -1))).toBeLessThan(want); // stops at the first list that suffices
+
+    // A large minRows (a large k) widens to a third of the lists at most, never to all of them.
+    const capped = seg.probe(q, 4, Number.POSITIVE_INFINITY);
+    expect(capped.length).toBe(Math.max(4, Math.ceil(seg.nlist * MAX_WIDEN_FRACTION)));
+    expect(capped.length).toBeLessThan(seg.nlist);
   });
 
   it("rejects a list block of the wrong size", () => {

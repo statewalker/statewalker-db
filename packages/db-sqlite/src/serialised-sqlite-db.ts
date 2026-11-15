@@ -63,6 +63,11 @@ function toSqliteParam(value: unknown, index: number): unknown {
     }
     return value.toISOString();
   }
+  // node:sqlite (Node 22) binds a view over a buffer with no backing store (any zero-length
+  // ArrayBuffer) as NULL: give an empty value a fresh empty Uint8Array, which binds as a BLOB.
+  if ((ArrayBuffer.isView(value) || value instanceof ArrayBuffer) && value.byteLength === 0) {
+    return new Uint8Array(1).subarray(0, 0);
+  }
   if (value instanceof Uint8Array && value.constructor === Uint8Array) return value;
   if (ArrayBuffer.isView(value)) {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);

@@ -362,6 +362,26 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
     },
   },
   {
+    name: "an empty ArrayBuffer or view binds as an empty BLOB, not NULL",
+    async run(db) {
+      await setup(db);
+      const inputs: [string, unknown][] = [
+        ["empty ArrayBuffer", new ArrayBuffer(0)],
+        ["view over an empty ArrayBuffer", new Uint8Array(new ArrayBuffer(0))],
+        ["empty DataView", new DataView(new ArrayBuffer(0))],
+        ["empty slice", new Uint8Array(4).subarray(2, 2)],
+      ];
+      for (const [k, value] of inputs) {
+        await db.query("INSERT INTO t (k, b) VALUES (?, ?)", [k, value]);
+      }
+      const rows = await db.query<{ k: string; t: unknown }>(
+        "SELECT k, typeof(b) AS t FROM t ORDER BY id",
+      );
+      check(rows.length === inputs.length, `${rows.length} rows written`);
+      for (const row of rows) check(row.t === "blob", `${row.k} stored as ${String(row.t)}`);
+    },
+  },
+  {
     name: "integers above 2^53 round-trip as bigint, safe integers come back as numbers",
     async run(db) {
       await db.exec("CREATE TABLE g (k INTEGER PRIMARY KEY, v INTEGER)");

@@ -25,10 +25,15 @@ export class SqlSegmentStore {
   readonly #t: { centroids: string; seg: string; f32: string };
   readonly #cache: Lru<ListData | Float32Array>;
 
+  /** The names of the tables segment rows live in, under `prefix`. */
+  static tables(prefix: string): { centroids: string; seg: string; f32: string } {
+    return { centroids: `${prefix}centroids`, seg: `${prefix}seg`, f32: `${prefix}f32` };
+  }
+
   constructor(db: Db, prefix: string, dims: number, cacheBytes = 64 * 1024 * 1024) {
     this.#db = db;
     this.#dims = dims;
-    this.#t = { centroids: `${prefix}centroids`, seg: `${prefix}seg`, f32: `${prefix}f32` };
+    this.#t = SqlSegmentStore.tables(prefix);
     this.#cache = new Lru(cacheBytes);
   }
 

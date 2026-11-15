@@ -15,14 +15,9 @@ import { newBrowserDuckDb } from "./browser-duckdb.js";
  * the duckdb-wasm worker and wasm files from node_modules through `?url`
  * imports, as the README documents. The jsDelivr worker crashes on OPFS I/O.
  *
- * KNOWN BUG — both cases are `it.fails` until statewalker-db#74 is fixed (drop `.fails` then):
- * with @duckdb/duckdb-wasm 1.33.1-dev57.0 nothing reaches OPFS. On `OPEN` of an
- * `opfs://` path the worker creates `<name>` and `<name>.wal` (0 bytes) and
- * registers their sync access handles only when `handle.getSize()` is non-zero
- * (`prepareDBFileHandle` in `duckdb-browser-eh.worker.js`). A new file is
- * empty, so it is never registered, DuckDB keeps the database outside OPFS,
- * both files stay at 0 bytes after `CHECKPOINT` and `close()`, and the reopened
- * database has no tables ("Table with name notes does not exist!").
+ * Regression test for statewalker-db#74: with @duckdb/duckdb-wasm 1.33.1-dev57.0
+ * a new OPFS database never reached OPFS (both files stayed at 0 bytes and the
+ * reopened database had no tables). Fixed by pinning duckdb-wasm 1.33.1-dev65.0.
  */
 const bundles: DuckDBBundles = {
   mvp: { mainModule: mvpWasm, mainWorker: mvpWorker },
@@ -73,7 +68,7 @@ describe("newBrowserDuckDb on OPFS", () => {
     { id: 2, body: "world" },
   ];
 
-  it.fails("keeps rows across flush, close and reopen", async () => {
+  it("keeps rows across flush, close and reopen", async () => {
     const path = newPath();
     const db = await writeRows(path);
     await db.flush?.();
@@ -83,7 +78,7 @@ describe("newBrowserDuckDb on OPFS", () => {
     expect(await readRows(path)).toEqual(expected);
   });
 
-  it.fails("keeps rows across close and reopen without flush", async () => {
+  it("keeps rows across close and reopen without flush", async () => {
     const path = newPath();
     const db = await writeRows(path);
     await db.close();

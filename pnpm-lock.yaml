@@ -13,8 +13,8 @@ catalogs:
       specifier: ^3.0.3
       version: 3.0.3
     '@duckdb/duckdb-wasm':
-      specifier: ^1.33.1-dev57.0
-      version: 1.33.1-dev57.0
+      specifier: 1.33.1-dev65.0
+      version: 1.33.1-dev65.0
     '@duckdb/node-api':
       specifier: ^1.5.5-r.4
       version: 1.5.5-r.5
@@ -125,7 +125,7 @@ importers:
     dependencies:
       '@duckdb/duckdb-wasm':
         specifier: 'catalog:'
-        version: 1.33.1-dev57.0
+        version: 1.33.1-dev65.0
       '@statewalker/db-api':
         specifier: workspace:^
         version: link:../db-api
@@ -539,8 +539,8 @@ packages:
     resolution: {integrity: sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ==}
     engines: {node: '>= 20.12.0'}
 
-  '@duckdb/duckdb-wasm@1.33.1-dev57.0':
-    resolution: {integrity: sha512-ndn5l2EHq1PEMvCg8G6lRV0vjhSUcbqdM/niNBTTqH4/PyyUUVKbge0uUyCnj27b9SF/CiqBwDsgKLTqBvaxdw==}
+  '@duckdb/duckdb-wasm@1.33.1-dev65.0':
+    resolution: {integrity: sha512-qK8BQySzhixj5mY040Qs/aGJbF09B6dP5U8RyASndnk8HFdeWEQuOKeFm+7+cbVuLS78jaXLaFkdVpwVs1Ww8A==}
 
   '@duckdb/node-api@1.5.5-r.5':
     resolution: {integrity: sha512-ZMX+sel3DjSKbGuQ44Y5Tp5LwYjlJkhB5faKr+9sSMcxixDMSW+8vaTOD1uRDuN9o0udUoCY/XX9PI1haEZuZg==}
@@ -2041,7 +2041,7 @@ snapshots:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@duckdb/duckdb-wasm@1.33.1-dev57.0':
+  '@duckdb/duckdb-wasm@1.33.1-dev65.0':
     dependencies:
       apache-arrow: 17.0.0
       qs: 6.16.0

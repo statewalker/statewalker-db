@@ -58,6 +58,9 @@ const UNICODE = items([
   "ẞ ß ss",
 ]);
 
+/** Reproductions of #34 (escaped class ranges) and #35 (lone surrogates). */
+const EDGES = items(["abmcd", "ab)cd", "ab-cd", "ab*cd", "xab😀yz", "ab.cd", "abzcd"]);
+
 type Query = [string, NgramItem[], string, NgramSearchOptions];
 const QUERIES: Query[] = [
   ["trgm", TRGM, "[qwerty]{2}-?[qwerty]{2}", { regex: true }],
@@ -109,6 +112,10 @@ const QUERIES: Query[] = [
   ["unicode", UNICODE, "東京駅", {}],
   ["unicode", UNICODE, "istanbul", { caseSensitive: false }],
   ["unicode", UNICODE, "kelvin K", { caseSensitive: false }],
+  ["edges", EDGES, "ab[\\.-z]cd", { regex: true }],
+  ["edges", EDGES, "ab[\\(-\\+]cd", { regex: true }],
+  ["edges", EDGES, "ab😀?", { regex: true }],
+  ["edges", EDGES, "xab\\uD83D", { regex: true }],
 ];
 
 for (const [driverName, newDb] of DRIVERS) {

@@ -9,6 +9,9 @@ jobs:
   ci:
     uses: statewalker/statewalker-ci/.github/workflows/ci.yml@main
     with:
+      baseline: library
+      secret-scan: true
+      api-diff: true
       package-checks: true
       release-path: true
 

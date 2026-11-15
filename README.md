@@ -56,7 +56,7 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
    2. `pnpm run test:browser`
 5. Optional, the Durable Object driver on a real celld: `pnpm run test:do` (needs celld 0.6.x on PATH).
 6. Before pushing: `pnpm run lint:check`, `pnpm run format:check`,
-   `pnpm run typecheck`. CI runs these together with build and test.
+   `pnpm run typecheck`, `pnpm run typecheck:tests`. CI runs these together with build and test.
 
 ## Why it is the way it is
 
@@ -117,6 +117,7 @@ Requirements: Node.js 24 and pnpm 10. The pnpm version is pinned in
 | `pnpm run test:browser` | `test:browser` of `db-sqlite-browser` and `db-duckdb-browser` (Vitest browser mode, Playwright, Chromium) |
 | `pnpm run test:do` | builds, then runs `db-sqlite-do`'s Durable Object tests on a real celld (needs celld 0.6.x on PATH) |
 | `pnpm run typecheck` | `tsc --noEmit` in every package |
+| `pnpm run typecheck:tests` | typechecks the test files that `typecheck` does not cover (`db-sqlite-do`'s `test-do/`) |
 | `pnpm run lint` / `lint:check` | `biome check --write .` / `biome check .` |
 | `pnpm run format` / `format:check` | `biome format --write .` / `biome format .` |
 | `pnpm changeset` | add a changeset (bump type and changelog text) to a pull request |

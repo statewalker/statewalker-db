@@ -254,6 +254,35 @@ case-insensitive regex never misses a text because of a case form (`Σ σ ς`, `
 The store is recorded at `init`; opening the same prefix with the other store fails
 with `ngram: index "<prefix>" was created with store "fts5", opened with "postings"`.
 
+## A runtime with different case mappings rebuilds the grams at `init`
+
+`fold` uses the runtime's `toUpperCase` and `toLowerCase`, so a Node, browser or V8 upgrade
+that ships a newer Unicode can fold some characters differently from the runtime that wrote
+the index. The fts5 store deletes a row by replaying its folded text, and a replay that does
+not match the inserted tokens corrupts a contentless FTS5 table; the postings store would keep
+stale grams. So `init` compares the runtime's fold identity with the one recorded in
+`{p}meta` (key `fold`):
+
+- **Identity**: `fold-v1:<hash>`, a 53-bit hash of every code point up to U+1FFFF that `fold`
+  changes and of what it changes it to (no cased character lies above U+1FFFF). It uses no
+  runtime API, so it is the same mechanism in Node, browsers and Durable Objects. It is
+  computed once per process, in about 30 ms.
+- **New index**: the identity is recorded.
+- **Same identity**: nothing happens.
+- **Different identity**: inside `init`'s transaction, before any write, every gram is
+  removed (fts5 `'delete-all'`, since a contentless table cannot `'rebuild'`; postings:
+  every row deleted) and re-added from `{p}texts`, 256 texts per step; then the new identity
+  is recorded. The rebuild is one transaction, so on a Durable Object a large index can
+  exceed the 15 s operation deadline; the transaction then rolls back, the index is left
+  as it was, and the next `init` tries again.
+- **No recorded identity** (an index written by a version before 0.1.2): the current
+  identity is recorded and nothing is rebuilt. This assumes the index was written by a
+  runtime that folds like the current one; if that may not hold, `drop()` the index and
+  re-upsert its texts.
+
+Rolling back to a version without this check is safe: it never reads the `fold` key and
+ignores it.
+
 ## What will surprise you in `./ngram`
 
 - `search` stops at `limit` hits (default 100) and verifies at most
@@ -283,7 +312,7 @@ with `ngram: index "<prefix>" was created with store "fts5", opened with "postin
 
 ## Internals of `./ngram`
 
-- Tables per prefix `p`: `{p}meta`, `{p}texts(id, text)`, and `{p}ng` (fts5,
+- Tables per prefix `p`: `{p}meta` (keys `store` and `fold`), `{p}texts(id, text)`, and `{p}ng` (fts5,
   contentless, `tokenize='trigram case_sensitive 1'`) or `{p}grams(gram, id)`.
 - The FTS5 table is contentless: the text is kept once, in `{p}texts`, and a row is
   deleted by replaying its indexed value — so writes read the previous text first.
@@ -297,6 +326,15 @@ with `ngram: index "<prefix>" was created with store "fts5", opened with "postin
 - The regex-to-literals planner is ported from hypgrep's `regex.js` (MIT).
 - Dependencies: `@statewalker/db-api`, `@statewalker/db-sqlite`. The planner, fold
   and trigram code import neither.
+
+## How it is tested against a real Durable Object
+
+`pnpm test` runs every suite on `node:sqlite` and on `@statewalker/db-sqlite-do`'s
+`node:sqlite` fake. `pnpm test:do` (from the repository root, after a build) starts `celld dev`
+on `packages/db-sqlite-index/test-do/` and runs the smoke scenarios of `test-do/scenarios.ts`
+(multi-part segment rows, a 150-id delete, the n-gram stores' writes and drops inside a
+transaction) inside a real Durable Object. It needs celld 0.6.x on `PATH`. The scenarios live
+outside `src/`, so they are not published.
 
 ## License
 

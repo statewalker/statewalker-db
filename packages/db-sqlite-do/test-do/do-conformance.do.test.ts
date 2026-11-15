@@ -43,7 +43,7 @@ runDbConformance(async () => remoteDb(crypto.randomUUID()), {
   skipFilePersistence: true,
 });
 
-describe("scenarios on celld (transactions + registered smoke scenarios)", () => {
+describe("transaction scenarios on celld", () => {
   for (const scenario of SCENARIOS) {
     it(scenario.name, async () => {
       expect(

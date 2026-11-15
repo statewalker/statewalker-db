@@ -22,25 +22,31 @@
     "./vector": {
       "source": "./src/vector/index.ts",
       "types": "./dist/vector.d.mts",
-      "import": "./dist/vector.mjs"
+      "import": "./dist/vector.mjs",
+      "default": "./dist/vector.mjs"
     },
     "./ngram": {
       "source": "./src/ngram/index.ts",
       "types": "./dist/ngram.d.mts",
-      "import": "./dist/ngram.mjs"
+      "import": "./dist/ngram.mjs",
+      "default": "./dist/ngram.mjs"
     }
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/test-fixtures.ts"
   ],
   "scripts": {
     "build": "tsdown",
     "prepack": "pnpm run build",
     "dev": "tsdown --watch",
     "test": "vitest run",
+    "test:do": "vitest run --config vitest.do.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "bench": "tsx bench/vector-bench.ts 50000 384",
     "clean": "rimraf dist",
     "lint": "biome check --write .",
@@ -53,6 +59,7 @@
   "devDependencies": {
     "@statewalker/db-sqlite-do": "workspace:^",
     "@statewalker/db-sqlite-node": "workspace:^",
+    "@statewalker/db-tests": "workspace:^",
     "@types/node": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",

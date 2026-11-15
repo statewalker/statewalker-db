@@ -5,8 +5,12 @@ import { runSqliteTransactionConformance } from "./sqlite-transaction-conformanc
 runSqliteTransactionConformance(async () => {
   const db = new DatabaseSync(":memory:");
   return newSerialisedSqliteDb({
-    all: (sql, params) =>
-      db.prepare(sql).all(...(params as SQLInputValue[])) as Record<string, unknown>[],
+    all: (sql, params) => {
+      // Integers as bigint, so one above 2^53 is read exactly; db-sqlite turns safe ones into numbers.
+      const statement = db.prepare(sql);
+      statement.setReadBigInts(true);
+      return statement.all(...(params as SQLInputValue[])) as Record<string, unknown>[];
+    },
     exec: (sql) => db.exec(sql),
     close: () => db.close(),
   });

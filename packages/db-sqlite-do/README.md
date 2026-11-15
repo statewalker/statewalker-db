@@ -61,11 +61,11 @@ const db = newDoSqliteDb(newFakeDoStorage());
 `pnpm test:do` (from the repository root) builds the workspace, starts `celld dev` on
 `packages/db-sqlite-do/test-do/` with a clean state on a free port, and runs, inside a real
 Durable Object, the shared `Db` conformance suite (through a small HTTP bridge), every scenario
-listed in `test-do/scenarios.ts` (the SQLite transaction scenarios a DO can meet, plus the
-vector and n-gram smoke scenarios of `@statewalker/db-sqlite-index`), and a platform probe whose expectations the `./fake` must also meet. It
+listed in `test-do/scenarios.ts` (the SQLite transaction scenarios a DO can meet), and a platform probe whose expectations the `./fake` must also meet. It
 needs celld 0.6.x on `PATH`; with another version it stops at once with
 `test:do needs celld 0.6.x on PATH, found "<version>"`. A celld that prints no `ready` line within 60 seconds fails
-the run with `celld dev was not ready within 60 s`. It stops only the celld process it started. It is not part of `pnpm test`: run it before a release.
+the run with `celld dev was not ready within 60 s`. It stops only the celld process it started. It is not part of `pnpm test`: run it before a release. The same root `pnpm test:do` also runs
+`@statewalker/db-sqlite-index`'s smoke scenarios in its own `test-do/`.
 
 ## Internals
 
@@ -88,6 +88,12 @@ the run with `celld dev was not ready within 60 s`. It stops only the celld proc
   retried rather than failed, so keep each write step small.
 - **BLOBs are converted both ways.** Typed-array parameters are bound as `ArrayBuffer`;
   `ArrayBuffer` values read back become `Uint8Array`, as on every other SQLite driver.
+- **Input handling comes from `@statewalker/db-sqlite`.** `query` rejects a second statement and
+  empty SQL before `sql.exec` sees it, and `true`/`false`, `undefined` and `Date` parameters bind
+  as `1`/`0`, `NULL` and ISO 8601 text, as on every SQLite driver. How DO SQLite itself binds a
+  `bigint` and reads an integer above 2^53 is not probed yet: the fake reads such an integer as a
+  `bigint` (as the other drivers do), and `test:do` skips that scenario
+  (`DO_UNPROBED_SCENARIOS` in `test-do/unsupported-scenarios.ts`).
 - **`close()` releases nothing.** The storage belongs to the DO. It only makes later calls on this
   Db reject with `db-sqlite: the database is closed`.
 - **Use one Db per DO.** Calls are queued inside one Db; direct `ctx.storage.sql` calls made

@@ -40,6 +40,15 @@ const REGEX_TABLE: Array<[string, string[][] | null]> = [
   ["[abc]{3}[def]{3}", null],
   ["[qwerty]{2}-?[qwerty]{2}", null],
   ["[^]|abc]def", null],
+  // #34: a range starting with an escape is a range, not three literals.
+  ["ab[\\.-z]cd", null],
+  ["ab[\\(-\\+]cd", null],
+  // Without the `u` flag, `[\1]` is an octal escape (U+0001), not the digit.
+  ["ab[\\1]cd", null],
+  // #35: a lone surrogate never occurs in the indexed code points.
+  ["ab😀?", null],
+  ["xab\\uD83D", [["xab"]]],
+  ["abcd\\uDE00?", [["abcd"]]],
 ];
 
 // A string each pattern matches (and, below, the counterexamples to gluing arms).
@@ -84,6 +93,13 @@ const MATCHES: Array<[string, string]> = [
   ["\\u{1F600}abc", "u{1F600}abc"],
   ["x\\u{3}yz", "xuuuyz"],
   ["[😀]abc", "😀abc"],
+  ["ab[\\.-z]cd", "abmcd"],
+  ["ab[\\(-\\+]cd", "ab)cd"],
+  ["ab[\\(-\\+]cd", "ab*cd"],
+  ["ab[\\1]cd", "ab\u0001cd"],
+  ["ab😀?", "xab😀yz"],
+  ["xab\\uD83D", "xab😀yz"],
+  ["abcd\\uDE00?", "abcd"],
 ];
 
 describe("planQuery (regex)", () => {

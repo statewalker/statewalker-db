@@ -22,6 +22,102 @@ describe("newNodeDuckDb", () => {
     }
   });
 
+  describe("parameter types", () => {
+    it("round-trips a Uint8Array through a BLOB column", async () => {
+      db = await newNodeDuckDb();
+      await db.exec("CREATE TABLE b (id INTEGER, x BLOB)");
+      await db.query("INSERT INTO b VALUES ($1, $2)", [1, new Uint8Array([0, 1, 2, 255])]);
+      const rows = await db.query<{ x: Uint8Array }>("SELECT x FROM b WHERE id = $1", [1]);
+      expect(Array.from(rows[0]?.x ?? [])).toEqual([0, 1, 2, 255]);
+      const found = await db.query<{ id: number }>("SELECT id FROM b WHERE x = $1", [
+        new Uint8Array([0, 1, 2, 255]),
+      ]);
+      expect(found).toEqual([{ id: 1 }]);
+    });
+
+    it("binds a Date into a TIMESTAMP column", async () => {
+      db = await newNodeDuckDb();
+      await db.exec("CREATE TABLE t (d TIMESTAMP)");
+      const date = new Date(Date.UTC(2024, 0, 2, 3, 4, 5, 678));
+      await db.query("INSERT INTO t VALUES ($1)", [date]);
+      const rows = await db.query<{ d: Date; y: number }>("SELECT d, year(d)::INTEGER AS y FROM t");
+      expect(rows[0]?.d).toBeInstanceOf(Date);
+      expect(rows[0]?.d.getTime()).toBe(date.getTime());
+      expect(rows[0]?.y).toBe(2024);
+    });
+
+    it("rejects an invalid Date with a clear error", async () => {
+      db = await newNodeDuckDb();
+      await expect(db.query("SELECT $1::TIMESTAMP AS d", [new Date(Number.NaN)])).rejects.toThrow(
+        /Invalid Date/,
+      );
+    });
+
+    it("binds a JS array into a FLOAT[3] column and searches by vector", async () => {
+      db = await newNodeDuckDb();
+      await db.exec("CREATE TABLE e (id INTEGER, vec FLOAT[3])");
+      await db.query("INSERT INTO e VALUES ($1, $2)", [1, [1, 0, 0]]);
+      await db.query("INSERT INTO e VALUES ($1, $2)", [2, new Float32Array([0, 1, 0])]);
+      const rows = await db.query<{ id: number }>(
+        "SELECT id FROM e ORDER BY array_distance(vec, $1::FLOAT[3]) LIMIT 1",
+        [[0, 0.9, 0.1]],
+      );
+      expect(rows).toEqual([{ id: 2 }]);
+      const vecs = await db.query<{ vec: number[] }>("SELECT vec FROM e ORDER BY id");
+      expect(vecs.map((r) => r.vec)).toEqual([
+        [1, 0, 0],
+        [0, 1, 0],
+      ]);
+    });
+
+    it("binds JS arrays, nested and empty, into INTEGER[] columns", async () => {
+      db = await newNodeDuckDb();
+      await db.exec("CREATE TABLE l (id INTEGER, xs INTEGER[], xss INTEGER[][])");
+      await db.query("INSERT INTO l VALUES ($1, $2, $3)", [1, [1, 2, 3], [[1], [2, 3]]]);
+      await db.query("INSERT INTO l (id, xs) VALUES ($1, $2)", [2, []]);
+      const rows = await db.query<{ id: number; xs: number[]; xss: number[][] | null }>(
+        "SELECT id, xs, xss FROM l ORDER BY id",
+      );
+      expect(rows).toEqual([
+        { id: 1, xs: [1, 2, 3], xss: [[1], [2, 3]] },
+        { id: 2, xs: [], xss: null },
+      ]);
+    });
+  });
+
+  describe("list item types", () => {
+    it("infers list types from all items, not only the first", async () => {
+      db = await newNodeDuckDb();
+      const rows = await db.query<{ d: number[]; b: bigint[]; s: string[]; n: number[] }>(
+        "SELECT $1 AS d, $2 AS b, $3 AS s, $4 AS n",
+        [
+          [0, 0.5],
+          [1, 3_000_000_000],
+          ["a", "b"],
+          [null, 1],
+        ],
+      );
+      expect(rows[0]?.d).toEqual([0, 0.5]);
+      expect(rows[0]?.b).toEqual([1n, 3_000_000_000n]);
+      expect(rows[0]?.s).toEqual(["a", "b"]);
+      expect(rows[0]?.n).toEqual([null, 1]);
+    });
+  });
+
+  describe("statements", () => {
+    it("rejects several statements in one query", async () => {
+      db = await newNodeDuckDb();
+      await expect(db.query("SELECT 1 AS a; SELECT 2 AS b")).rejects.toThrow(/one statement/);
+      await expect(db.query("SELECT $1 AS a; SELECT 2 AS b", [1])).rejects.toThrow(/one statement/);
+    });
+
+    it("still runs a single statement with a trailing semicolon or comment", async () => {
+      db = await newNodeDuckDb();
+      expect(await db.query("SELECT 1 AS a; -- done")).toEqual([{ a: 1 }]);
+      expect(await db.query("SELECT $1::INTEGER AS a;", [2])).toEqual([{ a: 2 }]);
+    });
+  });
+
   describe("FTS extension", () => {
     it("returns empty results for unmatched search terms", async () => {
       db = await newNodeDuckDb();

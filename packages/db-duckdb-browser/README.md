@@ -7,6 +7,11 @@ A DuckDB driver for the browser that implements `Db` from
 Worker. The database lives in memory, or in an OPFS file that survives page
 reloads.
 
+> **Known issue:** with `@duckdb/duckdb-wasm` 1.33.1-dev57.0, a new OPFS database is not
+> actually written to OPFS, so it does not survive a reopen
+> ([#74](https://github.com/statewalker/statewalker-db/issues/74)). The persistence tests in
+> `src/opfs-persistence.browser.test.ts` are marked as expected failures until that is fixed.
+
 ## Why it exists
 
 DuckDB WASM has its own asynchronous API built around Arrow tables, worker

@@ -10,7 +10,7 @@ catalog:
   # pgvector left the pglite package in 0.5 (was @electric-sql/pglite/vector)
   "@electric-sql/pglite-pgvector": ^0.0.17
   '@biomejs/biome': ^2.5.15
-  '@duckdb/duckdb-wasm': 1.33.1-dev65.0
+  '@duckdb/duckdb-wasm': 1.33.1-dev114.0
   '@duckdb/node-api': ^1.5.5-r.4
   '@playwright/test': ^1.63.0
   '@types/node': ^26.6.4

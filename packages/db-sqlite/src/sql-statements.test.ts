@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { countSqlStatements, firstSqlStatement, sqlStatementHeads } from "./sql-statements.js";
+import {
+  countSqlStatements,
+  firstSqlStatement,
+  splitSqlStatements,
+  sqlStatementHeads,
+} from "./sql-statements.js";
 
 describe("countSqlStatements", () => {
   it.each(["", "   \n\t", ";", " ; ;\n", "-- a comment", "/* a comment */", "/* unterminated"])(
@@ -68,7 +73,28 @@ describe("sqlStatementHeads", () => {
     ["(SELECT 1); 'x'", ["", ""]],
     ["EXPLAIN COMMIT", ["explain"]],
     ["SELECT 1;\vCOMMIT; \x0b\fEND", ["select", "commit", "end"]],
+    ["SELECT $a(');COMMIT;SELECT '", ["select", "commit", "select"]],
+    ['SELECT :a::b(");END;SELECT 1 FROM [x]', ["select", "end", "select"]],
+    ["SELECT @a([);x;SELECT #b(`)", ["select", "x", "select"]],
+    ["SELECT $a(' y);ROLLBACK", ["select", "rollback"]],
+    ["SELECT $(');COMMIT;'", ["select"]],
+    ["SELECT a$b(';COMMIT;')", ["select"]],
   ])("names the first word of each statement of %j", (sql, heads) => {
     expect(sqlStatementHeads(sql)).toEqual(heads);
+  });
+});
+
+describe("splitSqlStatements", () => {
+  it.each([
+    ["", []],
+    [" SELECT 1 ", ["SELECT 1 "]],
+    ["-- c\nSELECT 1; ;INSERT INTO t VALUES (';');", ["SELECT 1", "INSERT INTO t VALUES (';')"]],
+    [
+      "CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END; SELECT $a(';x')",
+      ["CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END", "SELECT $a(';x')"],
+    ],
+    ["SELECT 1; 'open", ["SELECT 1", "'open"]],
+  ])("splits %j", (sql, statements) => {
+    expect(splitSqlStatements(sql)).toEqual(statements);
   });
 });

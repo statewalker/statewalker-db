@@ -42,6 +42,37 @@ const KEYWORDS: Record<string, number> = {
 
 const isIdChar = (c: string) => /[A-Za-z0-9_$]/.test(c) || c.charCodeAt(0) >= 0x80;
 
+/** SQLite's whitespace (sqlite3Isspace): space, \t, \n, \v, \f, \r. */
+const isSpace = (c: string | undefined) =>
+  c === " " || c === "\t" || c === "\n" || c === "\v" || c === "\f" || c === "\r";
+
+/**
+ * The end (exclusive) of a variable token starting at `i` (`$`, `:`, `@` or `#`), as SQLite's
+ * tokenizer reads it: identifier characters and `::`, and the Tcl form `$name(…)`, which runs to
+ * the first `)` (included) or whitespace, quotes and semicolons included.
+ */
+function variableEnd(sql: string, i: number): number {
+  let j = i + 1;
+  let n = 0;
+  while (j < sql.length) {
+    const c = sql[j] as string;
+    if (isIdChar(c)) {
+      n++;
+      j++;
+    } else if (c === "(" && n > 0) {
+      j++;
+      while (j < sql.length && !isSpace(sql[j]) && sql[j] !== ")") j++;
+      if (sql[j] === ")") j++;
+      break;
+    } else if (c === ":" && sql[j + 1] === ":") {
+      j += 2;
+    } else {
+      break;
+    }
+  }
+  return j;
+}
+
 export function countSqlStatements(sql: string): SqlStatementCount {
   return scanSqlStatements(sql).count;
 }
@@ -67,12 +98,23 @@ export function sqlStatementHeads(sql: string): string[] {
   return scanSqlStatements(sql).heads;
 }
 
+/**
+ * The statements of `sql`, split as {@link sqlStatementHeads} splits them: each from its first
+ * token to just before the semicolon that ends it (the last to the end of the text).
+ */
+export function splitSqlStatements(sql: string): string[] {
+  return scanSqlStatements(sql).statements;
+}
+
 function scanSqlStatements(sql: string): {
   count: SqlStatementCount;
   firstEnd: number;
   heads: string[];
+  statements: string[];
 } {
   const heads: string[] = [];
+  const statements: string[] = [];
+  let start = 0; // where the current statement's first token starts
   let firstEnd = -1; // index of the ";" that ends the first statement
   let state = 0;
   let inStatement = false; // a token other than whitespace or ";" was seen since the last end
@@ -86,21 +128,16 @@ function scanSqlStatements(sql: string): {
         : "many") as SqlStatementCount,
     firstEnd,
     heads,
+    statements: inStatement ? [...statements, sql.slice(start)] : statements,
   });
   while (i < n) {
     const c = sql[i] as string;
+    const tokenStart = i;
     let token: number;
     let word = "";
     if (c === ";") {
       token = SEMI;
-    } else if (
-      c === " " ||
-      c === "\t" ||
-      c === "\n" ||
-      c === "\r" ||
-      c === "\f" ||
-      c === "\v" // SQLite skips it between statements (sqlite3Isspace), as it skips the others
-    ) {
+    } else if (isSpace(c)) {
       token = WS;
     } else if (c === "/" && sql[i + 1] === "*") {
       const close = sql.indexOf("*/", i + 2);
@@ -116,10 +153,18 @@ function scanSqlStatements(sql: string): {
       const close = sql.indexOf(c === "[" ? "]" : c, i + 1);
       if (close < 0) {
         // An unterminated literal runs to the end: content, which SQLite reports as an error.
-        if (!inStatement) heads.push("");
+        if (!inStatement) {
+          heads.push("");
+          start = tokenStart;
+          inStatement = true;
+        }
         return result();
       }
       i = close;
+      token = OTHER;
+    } else if (c === "$" || c === ":" || c === "@" || c === "#") {
+      // A variable, not a word: SQLite reads `$a(';x')` as one token, quotes and all.
+      i = variableEnd(sql, i) - 1;
       token = OTHER;
     } else if (isIdChar(c)) {
       let j = i + 1;
@@ -133,10 +178,12 @@ function scanSqlStatements(sql: string): {
     if (token !== SEMI && token !== WS && !inStatement) {
       inStatement = true;
       heads.push(word);
+      start = tokenStart;
     }
     state = TRANS[state]?.[token] ?? 2;
     if (token === SEMI && state === 1 && inStatement) {
       inStatement = false;
+      statements.push(sql.slice(start, i));
       if (firstEnd < 0) firstEnd = i;
     }
     i++;

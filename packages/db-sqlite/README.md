@@ -52,7 +52,14 @@ slipping out of the transaction:
   Statements are split as SQLite splits them, so the words inside literals, comments and trigger
   bodies do not count. A statement that does not start with a word (such as `(SELECT 1)`) is
   refused too, so that a separator SQLite skips and the splitter might not can never hide the
-  word that starts it.
+  word that starts it. The splitter follows SQLite's tokenizer where it matters: whitespace
+  includes `\v`, and a Tcl-style variable (`$a(…)`, `:a(…)`, `@a(…)`, `#a(…)`) runs to the first
+  `)` or whitespace, quotes included.
+- `exec` inside it runs one statement per engine call, each through the engine's `all`. On
+  Node.js, `all` compiles only the first statement of what it is given, so even text the splitter
+  misreads as part of a statement never runs as a statement of its own. The browser engine's
+  `all` runs every statement of its text, so there the splitter is the only guard; on a Durable
+  Object the platform itself refuses transaction control in SQL.
 - Once a statement fails, `tx` refuses every later call, with
   `db-sqlite: a statement of this read-only transaction failed, so it refuses later calls (SQLite may have ended the transaction)`:
   SQLite ends a transaction itself on some errors (`INSERT OR ROLLBACK`, `RAISE(ROLLBACK)`), and

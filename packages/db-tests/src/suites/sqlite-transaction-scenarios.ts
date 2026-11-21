@@ -73,6 +73,14 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
         // SQLite skips a vertical tab between statements, as it skips any whitespace.
         "SELECT 1;\vCOMMIT; INSERT INTO t (k) VALUES ('escaped')",
         "SELECT 1;\v\fCOMMIT; INSERT INTO t (k) VALUES ('escaped')",
+        // A Tcl-style variable ($a(...), :a(...), @a(...), #a(...)) runs to the first ")" or
+        // whitespace, quotes included: the quote inside it starts no literal.
+        "SELECT $a(');COMMIT;INSERT INTO t(k) VALUES('escaped');SELECT '",
+        "SELECT :a(');COMMIT;INSERT INTO t(k) VALUES('escaped');SELECT '",
+        'SELECT @a(");COMMIT;INSERT INTO t(k) VALUES(1);SELECT "',
+        "SELECT $a([);COMMIT;INSERT INTO t(k) VALUES(2);SELECT ]",
+        "SELECT #a(`);COMMIT;INSERT INTO t(k) VALUES(3);SELECT `",
+        "SELECT $a::b(');COMMIT;INSERT INTO t(k) VALUES(4);SELECT '",
         "end",
         "ROLLBACK; INSERT INTO t (k) VALUES ('escaped')",
         "SELECT 1; /* c */ release sp",

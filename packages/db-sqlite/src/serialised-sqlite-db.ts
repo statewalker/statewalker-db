@@ -1,6 +1,11 @@
 import type { Db, DbEntry } from "@statewalker/db-api";
 import { newDbCallQueue, toSafeIntegers } from "./serialised-db.js";
-import { countSqlStatements, firstSqlStatement, sqlStatementHeads } from "./sql-statements.js";
+import {
+  countSqlStatements,
+  firstSqlStatement,
+  splitSqlStatements,
+  sqlStatementHeads,
+} from "./sql-statements.js";
 import {
   SQLITE_READ_ONLY_TRANSACTION,
   SQLITE_TRANSACTION,
@@ -224,8 +229,13 @@ export function newSerialisedSqliteDb(engine: SqliteEngine): Db {
           },
           async exec(sql: string): Promise<void> {
             run(() => {
-              if (readOnly) checkReadOnly(sql);
-              runExec(engine, sql);
+              if (!readOnly) return runExec(engine, sql);
+              checkReadOnly(sql);
+              checkSql(sql, false);
+              // One statement per engine call, through `all`, which runs exactly one (node:sqlite
+              // compiles only the first): text the splitter might misread as part of a statement
+              // never runs as a statement of its own, whatever it says.
+              for (const statement of splitSqlStatements(sql)) runAll(engine, statement, []);
             });
           },
           async close(): Promise<void> {

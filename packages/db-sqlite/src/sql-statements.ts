@@ -42,6 +42,37 @@ const KEYWORDS: Record<string, number> = {
 
 const isIdChar = (c: string) => /[A-Za-z0-9_$]/.test(c) || c.charCodeAt(0) >= 0x80;
 
+/** SQLite's whitespace (sqlite3Isspace): space, \t, \n, \v, \f, \r. */
+const isSpace = (c: string | undefined) =>
+  c === " " || c === "\t" || c === "\n" || c === "\v" || c === "\f" || c === "\r";
+
+/**
+ * The end (exclusive) of a variable token starting at `i` (`$`, `:`, `@` or `#`), as SQLite's
+ * tokenizer reads it: identifier characters and `::`, and the Tcl form `$name(…)`, which runs to
+ * the first `)` (included) or whitespace, quotes and semicolons included.
+ */
+function variableEnd(sql: string, i: number): number {
+  let j = i + 1;
+  let n = 0;
+  while (j < sql.length) {
+    const c = sql[j] as string;
+    if (isIdChar(c)) {
+      n++;
+      j++;
+    } else if (c === "(" && n > 0) {
+      j++;
+      while (j < sql.length && !isSpace(sql[j]) && sql[j] !== ")") j++;
+      if (sql[j] === ")") j++;
+      break;
+    } else if (c === ":" && sql[j + 1] === ":") {
+      j += 2;
+    } else {
+      break;
+    }
+  }
+  return j;
+}
+
 export function countSqlStatements(sql: string): SqlStatementCount {
   return scanSqlStatements(sql).count;
 }
@@ -57,19 +88,56 @@ export function firstSqlStatement(sql: string): string {
   return firstEnd < 0 ? sql : sql.slice(0, firstEnd);
 }
 
-function scanSqlStatements(sql: string): { count: SqlStatementCount; firstEnd: number } {
+/**
+ * The first word of every statement of `sql`, lowercased, in order ("" for a statement that does
+ * not start with a word, such as `(SELECT 1)`). Statements are split as SQLite splits them, so a
+ * keyword inside a literal, a comment or a trigger body is not a head. Empty statements are
+ * skipped.
+ */
+export function sqlStatementHeads(sql: string): string[] {
+  return scanSqlStatements(sql).heads;
+}
+
+/**
+ * The statements of `sql`, split as {@link sqlStatementHeads} splits them: each from its first
+ * token to just before the semicolon that ends it (the last to the end of the text).
+ */
+export function splitSqlStatements(sql: string): string[] {
+  return scanSqlStatements(sql).statements;
+}
+
+function scanSqlStatements(sql: string): {
+  count: SqlStatementCount;
+  firstEnd: number;
+  heads: string[];
+  statements: string[];
+} {
+  const heads: string[] = [];
+  const statements: string[] = [];
+  let start = 0; // where the current statement's first token starts
   let firstEnd = -1; // index of the ";" that ends the first statement
   let state = 0;
-  let content = false; // a token other than whitespace or ";" was seen
-  let firstEnded = false; // the first statement with content has reached its ";"
+  let inStatement = false; // a token other than whitespace or ";" was seen since the last end
   let i = 0;
   const n = sql.length;
+  const result = () => ({
+    count: (heads.length === 0
+      ? "empty"
+      : heads.length === 1
+        ? "one"
+        : "many") as SqlStatementCount,
+    firstEnd,
+    heads,
+    statements: inStatement ? [...statements, sql.slice(start)] : statements,
+  });
   while (i < n) {
     const c = sql[i] as string;
+    const tokenStart = i;
     let token: number;
+    let word = "";
     if (c === ";") {
       token = SEMI;
-    } else if (c === " " || c === "\t" || c === "\n" || c === "\r" || c === "\f") {
+    } else if (isSpace(c)) {
       token = WS;
     } else if (c === "/" && sql[i + 1] === "*") {
       const close = sql.indexOf("*/", i + 2);
@@ -83,27 +151,42 @@ function scanSqlStatements(sql: string): { count: SqlStatementCount; firstEnd: n
       token = WS;
     } else if (c === "[" || c === "`" || c === '"' || c === "'") {
       const close = sql.indexOf(c === "[" ? "]" : c, i + 1);
-      if (close < 0) return { count: firstEnded ? "many" : "one", firstEnd };
+      if (close < 0) {
+        // An unterminated literal runs to the end: content, which SQLite reports as an error.
+        if (!inStatement) {
+          heads.push("");
+          start = tokenStart;
+          inStatement = true;
+        }
+        return result();
+      }
       i = close;
+      token = OTHER;
+    } else if (c === "$" || c === ":" || c === "@" || c === "#") {
+      // A variable, not a word: SQLite reads `$a(';x')` as one token, quotes and all.
+      i = variableEnd(sql, i) - 1;
       token = OTHER;
     } else if (isIdChar(c)) {
       let j = i + 1;
       while (j < n && isIdChar(sql[j] as string)) j++;
-      token = KEYWORDS[sql.slice(i, j).toLowerCase()] ?? OTHER;
+      word = sql.slice(i, j).toLowerCase();
+      token = KEYWORDS[word] ?? OTHER;
       i = j - 1;
     } else {
       token = OTHER;
     }
-    if (token !== SEMI && token !== WS) {
-      if (firstEnded) return { count: "many", firstEnd };
-      content = true;
+    if (token !== SEMI && token !== WS && !inStatement) {
+      inStatement = true;
+      heads.push(word);
+      start = tokenStart;
     }
     state = TRANS[state]?.[token] ?? 2;
-    if (token === SEMI && state === 1 && content && !firstEnded) {
-      firstEnded = true;
-      firstEnd = i;
+    if (token === SEMI && state === 1 && inStatement) {
+      inStatement = false;
+      statements.push(sql.slice(start, i));
+      if (firstEnd < 0) firstEnd = i;
     }
     i++;
   }
-  return { count: content ? "one" : "empty", firstEnd };
+  return result();
 }

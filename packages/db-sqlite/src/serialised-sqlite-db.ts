@@ -1,7 +1,16 @@
 import type { Db, DbEntry } from "@statewalker/db-api";
 import { newDbCallQueue, toSafeIntegers } from "./serialised-db.js";
-import { countSqlStatements, firstSqlStatement } from "./sql-statements.js";
-import { SQLITE_TRANSACTION, type SqliteTransactionHook } from "./sqlite-transaction.js";
+import {
+  countSqlStatements,
+  firstSqlStatement,
+  splitSqlStatements,
+  sqlStatementHeads,
+} from "./sql-statements.js";
+import {
+  SQLITE_READ_ONLY_TRANSACTION,
+  SQLITE_TRANSACTION,
+  type SqliteTransactionHook,
+} from "./sqlite-transaction.js";
 
 /**
  * The synchronous engine a SQLite driver wraps. `all` returns rows (BLOBs as Uint8Array; integers
@@ -84,6 +93,44 @@ function runExec(engine: SqliteEngine, sql: string): void {
   engine.exec(sql);
 }
 
+/** Statements a read-only transaction refuses: they end it, or reach outside it. */
+const READ_ONLY_REFUSED = new Set([
+  "begin",
+  "commit",
+  "end",
+  "rollback",
+  "savepoint",
+  "release",
+  "attach",
+  "detach",
+  "pragma",
+  "vacuum",
+]);
+
+function checkReadOnly(sql: string): void {
+  if (typeof sql !== "string") return; // checkSql reports it
+  for (const head of sqlStatementHeads(sql)) {
+    // A statement that does not start with a word is refused too: where this scanner and SQLite
+    // could disagree on where a statement starts, the word SQLite sees is never checked.
+    if (head === "") {
+      throw new Error(
+        "db-sqlite: a read-only transaction refuses a statement that does not start with a keyword",
+      );
+    }
+    if (READ_ONLY_REFUSED.has(head)) {
+      throw new Error(
+        `db-sqlite: a read-only transaction refuses ${head.toUpperCase()} ` +
+          "(it would end the transaction or reach outside it)",
+      );
+    }
+  }
+}
+
+const READ_ONLY_FAILED =
+  "db-sqlite: a statement of this read-only transaction failed, so it refuses later calls " +
+  "(SQLite may have ended the transaction)";
+const ROLLBACK_ON_PURPOSE = "db-sqlite: the read-only transaction is rolled back";
+
 /**
  * Wrap an engine as a `Db` with the lifecycle of `newSerialisedDb` (calls run one at a time, in
  * call order; `close()` waits for earlier calls; later calls reject with
@@ -113,37 +160,101 @@ export function newSerialisedSqliteDb(engine: SqliteEngine): Db {
       }
     });
 
-  const transaction: SqliteTransactionHook = (cb) =>
-    queue.run(async () => {
-      let finished = false;
-      const open = () => {
-        if (finished) throw new Error("db-sqlite: the transaction is finished; use the outer Db");
-      };
-      const tx: Db = {
-        async query<T = DbEntry>(sql: string, params: unknown[] = []): Promise<T[]> {
-          open();
-          return runAll(engine, sql, params) as T[];
-        },
-        async exec(sql: string): Promise<void> {
-          open();
-          runExec(engine, sql);
-        },
-        async close(): Promise<void> {
-          throw new Error("db-sqlite: close the outer Db, not the transaction handle");
-        },
-      };
-      try {
-        return await runTransaction(() => cb(tx));
-      } finally {
-        finished = true;
+  const platformTransaction = engine.transaction?.bind(engine);
+  const runReadOnlyTransaction = platformTransaction
+    ? async <T>(fn: () => Promise<T>): Promise<T> => {
+        // The platform commits when the closure returns: throw to make it roll back.
+        let result: T | undefined;
+        let returned = false;
+        try {
+          await platformTransaction(async () => {
+            returned = false;
+            result = await fn();
+            returned = true;
+            throw new Error(ROLLBACK_ON_PURPOSE);
+          });
+        } catch (error) {
+          if (returned && error instanceof Error && error.message === ROLLBACK_ON_PURPOSE) {
+            return result as T;
+          }
+          throw error;
+        }
+        throw new Error("db-sqlite: the platform did not roll back the read-only transaction");
       }
-    });
+    : async <T>(fn: () => Promise<T>): Promise<T> => {
+        // A ROLLBACK that fails for any reason but "no transaction" (SQLite ended it itself, as
+        // INSERT OR ROLLBACK does: nothing to undo) leaves the transaction open: report it.
+        const rollback = () => {
+          try {
+            engine.exec("ROLLBACK");
+          } catch (error) {
+            if (!/no transaction is active/i.test(String((error as Error)?.message))) throw error;
+          }
+        };
+        engine.exec("BEGIN");
+        let result: T;
+        try {
+          result = await fn();
+        } catch (error) {
+          rollback();
+          throw error;
+        }
+        rollback();
+        return result;
+      };
+
+  const newTransactionHook =
+    (readOnly: boolean): SqliteTransactionHook =>
+    (cb) =>
+      queue.run(async () => {
+        let finished = false;
+        let failed = false;
+        const run = <R>(fn: () => R): R => {
+          if (finished) throw new Error("db-sqlite: the transaction is finished; use the outer Db");
+          if (!readOnly) return fn();
+          if (failed) throw new Error(READ_ONLY_FAILED);
+          try {
+            return fn();
+          } catch (error) {
+            failed = true;
+            throw error;
+          }
+        };
+        const tx: Db = {
+          async query<T = DbEntry>(sql: string, params: unknown[] = []): Promise<T[]> {
+            return run(() => {
+              if (readOnly) checkReadOnly(sql);
+              return runAll(engine, sql, params) as T[];
+            });
+          },
+          async exec(sql: string): Promise<void> {
+            run(() => {
+              if (!readOnly) return runExec(engine, sql);
+              checkReadOnly(sql);
+              checkSql(sql, false);
+              // One statement per engine call, through `all`, which runs exactly one (node:sqlite
+              // compiles only the first): text the splitter might misread as part of a statement
+              // never runs as a statement of its own, whatever it says.
+              for (const statement of splitSqlStatements(sql)) runAll(engine, statement, []);
+            });
+          },
+          async close(): Promise<void> {
+            throw new Error("db-sqlite: close the outer Db, not the transaction handle");
+          },
+        };
+        try {
+          return await (readOnly ? runReadOnlyTransaction : runTransaction)(() => cb(tx));
+        } finally {
+          finished = true;
+        }
+      });
 
   return {
     query: <T = DbEntry>(sql: string, params: unknown[] = []) =>
       queue.run(() => runAll(engine, sql, params) as T[]),
     exec: (sql: string) => queue.run(() => runExec(engine, sql)),
     close: () => queue.close(),
-    [SQLITE_TRANSACTION]: transaction,
+    [SQLITE_TRANSACTION]: newTransactionHook(false),
+    [SQLITE_READ_ONLY_TRANSACTION]: newTransactionHook(true),
   } as Db;
 }

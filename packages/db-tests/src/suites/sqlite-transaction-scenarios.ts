@@ -5,7 +5,7 @@
  * Each scenario gets a fresh, empty Db and throws on the first failed check.
  */
 import type { Db } from "@statewalker/db-api";
-import { inTransaction } from "@statewalker/db-sqlite";
+import { inReadOnlyTransaction, inTransaction } from "@statewalker/db-sqlite";
 
 export type SqliteTransactionScenario = { name: string; run(db: Db): Promise<void> };
 
@@ -25,6 +25,144 @@ const setup = (db: Db) => db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, k TEX
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
+  {
+    name: "read-only: returns the callback's value and rolls back every write",
+    async run(db) {
+      await setup(db);
+      await db.exec("INSERT INTO t (k) VALUES ('kept')");
+      const value = await inReadOnlyTransaction(db, async (tx) => {
+        await tx.query("INSERT INTO t (k) VALUES (?)", ["gone"]);
+        await tx.exec("UPDATE t SET k = 'changed'; CREATE TABLE extra (a)");
+        const seen = await tx.query<{ k: string }>("SELECT k FROM t ORDER BY id");
+        return seen.map((r) => r.k).join(",");
+      });
+      check(value === "changed,changed", `the callback saw its own writes: ${value}`);
+      const rows = await db.query<{ k: string }>("SELECT k FROM t");
+      check(rows.length === 1 && rows[0]?.k === "kept", "no write persisted");
+      const tables = await db.query("SELECT name FROM sqlite_master WHERE name = 'extra'");
+      check(tables.length === 0, "the table created inside is gone");
+    },
+  },
+  {
+    name: "read-only: rolls back and rethrows when the callback throws",
+    async run(db) {
+      await setup(db);
+      const boom = new Error("boom");
+      let caught: unknown;
+      try {
+        await inReadOnlyTransaction(db, async (tx) => {
+          await tx.query("INSERT INTO t (k) VALUES ('a')");
+          await sleep(5);
+          throw boom;
+        });
+      } catch (error) {
+        caught = error;
+      }
+      check(caught === boom, `the callback's own error is rethrown: ${errorText(caught)}`);
+      check((await count(db)) === 0, "no row survives");
+      await db.query("INSERT INTO t (k) VALUES ('after')");
+      check((await count(db)) === 1, "the db still commits plain writes");
+    },
+  },
+  {
+    name: "read-only: statements that would end the transaction or reach outside it are refused",
+    async run(db) {
+      await setup(db);
+      const attempts = [
+        "COMMIT; INSERT INTO t (k) VALUES ('escaped')",
+        // SQLite skips a vertical tab between statements, as it skips any whitespace.
+        "SELECT 1;\vCOMMIT; INSERT INTO t (k) VALUES ('escaped')",
+        "SELECT 1;\v\fCOMMIT; INSERT INTO t (k) VALUES ('escaped')",
+        // A Tcl-style variable ($a(...), :a(...), @a(...), #a(...)) runs to the first ")" or
+        // whitespace, quotes included: the quote inside it starts no literal.
+        "SELECT $a(');COMMIT;INSERT INTO t(k) VALUES('escaped');SELECT '",
+        "SELECT :a(');COMMIT;INSERT INTO t(k) VALUES('escaped');SELECT '",
+        'SELECT @a(");COMMIT;INSERT INTO t(k) VALUES(1);SELECT "',
+        "SELECT $a([);COMMIT;INSERT INTO t(k) VALUES(2);SELECT ]",
+        "SELECT #a(`);COMMIT;INSERT INTO t(k) VALUES(3);SELECT `",
+        "SELECT $a::b(');COMMIT;INSERT INTO t(k) VALUES(4);SELECT '",
+        "end",
+        "ROLLBACK; INSERT INTO t (k) VALUES ('escaped')",
+        "SELECT 1; /* c */ release sp",
+        "SAVEPOINT sp",
+        "BEGIN",
+        "ATTACH ':memory:' AS other",
+        "DETACH other",
+        "PRAGMA foreign_keys = ON",
+        "VACUUM",
+        // Not starting with a keyword: where a scanner and SQLite could disagree, refused.
+        "(SELECT 1)",
+      ];
+      for (const sql of attempts) {
+        for (const how of ["exec", "query"] as const) {
+          if (how === "query" && sql.includes(";")) continue;
+          let caught: unknown;
+          try {
+            await inReadOnlyTransaction<unknown>(db, (tx) =>
+              how === "exec" ? tx.exec(sql) : tx.query(sql),
+            );
+          } catch (error) {
+            caught = error;
+          }
+          check(
+            /read-only/i.test(errorText(caught)),
+            `${how} ${sql} refused: ${errorText(caught)}`,
+          );
+        }
+      }
+      check((await count(db)) === 0, "nothing escaped the transaction");
+    },
+  },
+  {
+    name: "read-only: after a failed statement the handle refuses every later call",
+    async run(db) {
+      await db.exec("CREATE TABLE u (k TEXT UNIQUE)");
+      await db.exec("INSERT INTO u VALUES ('a')");
+      let later: unknown;
+      try {
+        await inReadOnlyTransaction(db, async (tx) => {
+          // OR ROLLBACK ends SQLite's transaction itself: what follows would run outside it.
+          await tx.query("INSERT OR ROLLBACK INTO u VALUES ('a')").catch(() => undefined);
+          try {
+            await tx.query("INSERT INTO u VALUES ('b')");
+          } catch (error) {
+            later = error;
+          }
+        });
+      } catch {
+        // The platform may also fail the transaction (DO: "no transaction is active").
+      }
+      check(/read-only/i.test(errorText(later)), `later call refused: ${errorText(later)}`);
+      const rows = await db.query<{ k: string }>("SELECT k FROM u");
+      check(rows.length === 1, `nothing persisted: ${rows.map((r) => r.k).join(",")}`);
+    },
+  },
+  {
+    name: "read-only: reads committed data; nesting and wrapped Dbs are rejected",
+    async run(db) {
+      await setup(db);
+      await db.query("INSERT INTO t (k) VALUES ('a'), ('b')");
+      let nested: unknown;
+      const n = await inReadOnlyTransaction(db, async (tx) => {
+        try {
+          await inReadOnlyTransaction(tx, async () => undefined);
+        } catch (error) {
+          nested = error;
+        }
+        return count(tx);
+      });
+      check(n === 2, `read ${n} rows`);
+      check(/nest/i.test(errorText(nested)), `nested call rejected: ${errorText(nested)}`);
+      let wrapped: unknown;
+      try {
+        const wrapper: Db = { query: db.query, exec: db.exec, close: db.close };
+        await inReadOnlyTransaction(wrapper, async () => 1);
+      } catch (error) {
+        wrapped = error;
+      }
+      check(/wrap/i.test(errorText(wrapped)), `wrapper rejected: ${errorText(wrapped)}`);
+    },
+  },
   {
     name: "commits every statement and returns the callback's value",
     async run(db) {

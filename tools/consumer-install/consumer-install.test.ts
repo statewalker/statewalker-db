@@ -32,6 +32,7 @@ export const PACKAGES: ConsumerTarget[] = [
     typesOnly: true,
   },
   { name: "@statewalker/db-sqlite", dir: "db-sqlite", subpaths: ["."] },
+  { name: "@statewalker/db-rpc", dir: "db-rpc", subpaths: ["."] },
   { name: "@statewalker/db-duckdb-node", dir: "db-duckdb-node", subpaths: ["."] },
   { name: "@statewalker/db-sqlite-node", dir: "db-sqlite-node", subpaths: ["."] },
   { name: "@statewalker/db-pglite", dir: "db-pglite", subpaths: ["."] },

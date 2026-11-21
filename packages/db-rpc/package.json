@@ -1,0 +1,66 @@
+{
+  "name": "@statewalker/db-rpc",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "A @statewalker/db-api Db over any RPC: results paged so no message has to hold a large one, keyed retries, and a read-only server mode whose every call is rolled back.",
+  "bugs": {
+    "url": "https://github.com/statewalker/statewalker-db/issues"
+  },
+  "homepage": "https://github.com/statewalker/statewalker-db/tree/main/packages/db-rpc#readme",
+  "author": {
+    "name": "Mikhail Kotelnikov",
+    "email": "mikhail.kotelnikov@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/statewalker/statewalker-db.git",
+    "directory": "packages/db-rpc"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/test-helpers.ts"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "pnpm run build",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist",
+    "lint": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@statewalker/db-api": "workspace:^",
+    "@statewalker/db-sqlite": "workspace:^"
+  },
+  "devDependencies": {
+    "@statewalker/db-sqlite-do": "workspace:^",
+    "@statewalker/db-sqlite-node": "workspace:^",
+    "@statewalker/db-tests": "workspace:^",
+    "@types/node": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}

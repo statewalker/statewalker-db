@@ -16,11 +16,12 @@ behave the same. The workspace depends on no other `@statewalker` package.
   +-- db-duckdb-browser      @duckdb/duckdb-wasm
   +-- db-duckdb-node         @duckdb/node-api
   +-- db-pglite              @electric-sql/pglite
-  +-- db-sqlite              inTransaction + the call queue of every SQLite driver
+  +-- db-sqlite              inTransaction, inReadOnlyTransaction + the call queue of every SQLite driver
        +-- db-sqlite-browser   @sqlite.org/sqlite-wasm
        +-- db-sqlite-node      node:sqlite
        +-- db-sqlite-do        Durable Object ctx.storage
        +-- db-sqlite-index     vector and n-gram indexes; run on a Db of any of the three above
+       +-- db-rpc              any Db over any RPC: paged results, keyed retries, read-only mode
 
  @statewalker/db-tests (private): runDbConformance, run by every driver;
  runSqliteTransactionConformance, run by the three SQLite drivers
@@ -33,7 +34,8 @@ behave the same. The workspace depends on no other `@statewalker` package.
 | `packages/db-duckdb-node` | `@statewalker/db-duckdb-node`: DuckDB with native Node.js bindings | npm |
 | `packages/db-sqlite-browser` | `@statewalker/db-sqlite-browser`: the official SQLite WASM build; in memory anywhere, OPFS in a Dedicated Worker | npm |
 | `packages/db-sqlite-node` | `@statewalker/db-sqlite-node`: Node.js's built-in `node:sqlite` | npm |
-| `packages/db-sqlite` | `@statewalker/db-sqlite`: `inTransaction` and the queue every SQLite driver uses | npm |
+| `packages/db-sqlite` | `@statewalker/db-sqlite`: `inTransaction`, `inReadOnlyTransaction` and the queue every SQLite driver uses | npm |
+| `packages/db-rpc` | `@statewalker/db-rpc`: a `Db` over any RPC (Durable Object stubs, postMessage), results paged, read-only mode | npm |
 | `packages/db-pglite` | `@statewalker/db-pglite`: PGlite (Postgres in WASM), Node.js and browser | npm |
 | `packages/db-sqlite-index` | `@statewalker/db-sqlite-index`: IVF vector index (`./vector`) and trigram text/regex index (`./ngram`) in SQLite tables | npm |
 | `packages/db-sqlite-do` | `@statewalker/db-sqlite-do`: Durable Object SQLite, plus a Node.js fake | npm |

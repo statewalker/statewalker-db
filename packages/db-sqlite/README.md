@@ -4,7 +4,8 @@
 
 Transactions for SQLite databases behind `Db` from `@statewalker/db-api`:
 `inTransaction(db, cb)` runs `cb` so that every statement issued through its `tx` handle commits
-together or not at all. It also holds `newSerialisedSqliteDb`, the wrapper every SQLite driver
+together or not at all; `inReadOnlyTransaction(db, cb)` runs it in a transaction that is always
+rolled back, so nothing it writes persists. It also holds `newSerialisedSqliteDb`, the wrapper every SQLite driver
 (`db-sqlite-node`, `db-sqlite-browser`, `db-sqlite-do`) builds its `Db` with, and
 `newSerialisedDb`, the engine-neutral lifecycle wrapper the DuckDB and PGlite drivers use. Both
 keep the lifecycle that the `Db` JSDoc in `@statewalker/db-api` promises.
@@ -24,7 +25,7 @@ pnpm add @statewalker/db-sqlite
 
 | Import | Gives | Environment |
 | --- | --- | --- |
-| `@statewalker/db-sqlite` | `inTransaction`, `newSerialisedDb`, `newSerialisedSqliteDb`, `SQLITE_TRANSACTION`; types `SerialisedDbEngine`, `SqliteEngine`, `SqliteTransactionHook` | any |
+| `@statewalker/db-sqlite` | `inTransaction`, `inReadOnlyTransaction`, `hasReadOnlyTransaction`, `newSerialisedDb`, `newSerialisedSqliteDb`, `SQLITE_TRANSACTION`, `SQLITE_READ_ONLY_TRANSACTION`; types `SerialisedDbEngine`, `SqliteEngine`, `SqliteTransactionHook` | any |
 
 `newSerialisedDb(engine, { name })` wraps an asynchronous `SerialisedDbEngine` (`query(sql,
 params)`, `exec(sql)`, optional `flush()`, `close()`) as a `Db`: calls run one at a time in call
@@ -38,6 +39,24 @@ package without pulling in any engine.
 `inTransaction(db, cb)` returns what `cb` returns. If `cb` throws, everything it wrote is rolled
 back and the same error is rethrown; so is a failing `COMMIT` (a deferred foreign key, for
 example), which rejects with SQLite's error. While it runs, other calls on `db` wait for it.
+
+`inReadOnlyTransaction(db, cb)` returns what `cb` returns, or rethrows its error, and in both
+cases rolls back everything it wrote: `tx` sees the committed data and its own writes, and none
+of them persist. It is what a reader gets the full SQL surface through without the risk
+(`@statewalker/db-rpc`'s read-only server uses it for every call). Two rules keep a statement from
+slipping out of the transaction:
+- SQL that would end the transaction or reach outside it is refused before it runs, on `query`
+  and `exec` alike: a statement starting with BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT, RELEASE,
+  ATTACH, DETACH, PRAGMA or VACUUM rejects with
+  `db-sqlite: a read-only transaction refuses COMMIT (it would end the transaction or reach outside it)`.
+  Statements are split as SQLite splits them, so the words inside literals, comments and trigger
+  bodies do not count.
+- Once a statement fails, `tx` refuses every later call, with
+  `db-sqlite: a statement of this read-only transaction failed, so it refuses later calls (SQLite may have ended the transaction)`:
+  SQLite ends a transaction itself on some errors (`INSERT OR ROLLBACK`, `RAISE(ROLLBACK)`), and
+  what ran after that would run, and persist, outside it.
+
+`hasReadOnlyTransaction(db)` tells whether `db` carries the hook it needs.
 
 Every SQLite driver handles input the same way, because the wrapper does it before the engine
 sees the call (on the Db and on the `tx` handle alike):
@@ -79,6 +98,14 @@ await db.close();
 
 ## Internals
 
+- **Read-only rollback.** On Node.js and in the browser the transaction is `BEGIN` (deferred)
+  … `ROLLBACK`; a `ROLLBACK` failing with `no transaction is active` (SQLite already ended it) is
+  ignored, any other failure rejects. On a Durable Object, whose `storage.transaction` commits
+  when the closure returns, the closure throws a marker error after `cb` returns, so the platform
+  rolls back, and the marker is turned back into `cb`'s value. The read-only hook has its own key,
+  `Symbol.for("@statewalker/db-sqlite:read-only-transaction")`, so a Db built by an older
+  db-sqlite (which has only the committing hook) is refused, never committed:
+  `inReadOnlyTransaction: this Db has no SQLite read-only transaction hook. ...`.
 - **The hook travels on the Db object.** `newSerialisedSqliteDb` stores the transaction function
   under `Symbol.for("@statewalker/db-sqlite:transaction")`; `inTransaction` looks it up. A Db
   without it rejects with

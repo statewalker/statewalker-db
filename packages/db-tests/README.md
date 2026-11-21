@@ -58,7 +58,8 @@ time). Its scenarios are plain async functions with no Vitest import, exported a
 `@statewalker/db-tests/sqlite-transaction-scenarios`, so a Durable Object worker can bundle
 and run the very same checks against real DO SQLite. `{ skip: [name, …] }` drops the
 scenarios a platform cannot meet, by name. Besides transactions (commit, rollback, a failing
-`COMMIT`, queueing, nesting, handle expiry), they pin what every SQLite driver must do the same
+`COMMIT`, queueing, nesting, handle expiry, and read-only transactions that always roll back and
+refuse statements that would slip out), they pin what every SQLite driver must do the same
 way: call order on a plain Db, an idempotent `close`, BLOBs, parameter types (boolean,
 `undefined`, `Date`, `bigint`), integers above 2^53, the rejection of a second statement in
 `query`, and the rejection of empty SQL.

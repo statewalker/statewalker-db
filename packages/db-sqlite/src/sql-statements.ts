@@ -57,16 +57,40 @@ export function firstSqlStatement(sql: string): string {
   return firstEnd < 0 ? sql : sql.slice(0, firstEnd);
 }
 
-function scanSqlStatements(sql: string): { count: SqlStatementCount; firstEnd: number } {
+/**
+ * The first word of every statement of `sql`, lowercased, in order ("" for a statement that does
+ * not start with a word, such as `(SELECT 1)`). Statements are split as SQLite splits them, so a
+ * keyword inside a literal, a comment or a trigger body is not a head. Empty statements are
+ * skipped.
+ */
+export function sqlStatementHeads(sql: string): string[] {
+  return scanSqlStatements(sql).heads;
+}
+
+function scanSqlStatements(sql: string): {
+  count: SqlStatementCount;
+  firstEnd: number;
+  heads: string[];
+} {
+  const heads: string[] = [];
   let firstEnd = -1; // index of the ";" that ends the first statement
   let state = 0;
-  let content = false; // a token other than whitespace or ";" was seen
-  let firstEnded = false; // the first statement with content has reached its ";"
+  let inStatement = false; // a token other than whitespace or ";" was seen since the last end
   let i = 0;
   const n = sql.length;
+  const result = () => ({
+    count: (heads.length === 0
+      ? "empty"
+      : heads.length === 1
+        ? "one"
+        : "many") as SqlStatementCount,
+    firstEnd,
+    heads,
+  });
   while (i < n) {
     const c = sql[i] as string;
     let token: number;
+    let word = "";
     if (c === ";") {
       token = SEMI;
     } else if (c === " " || c === "\t" || c === "\n" || c === "\r" || c === "\f") {
@@ -83,27 +107,32 @@ function scanSqlStatements(sql: string): { count: SqlStatementCount; firstEnd: n
       token = WS;
     } else if (c === "[" || c === "`" || c === '"' || c === "'") {
       const close = sql.indexOf(c === "[" ? "]" : c, i + 1);
-      if (close < 0) return { count: firstEnded ? "many" : "one", firstEnd };
+      if (close < 0) {
+        // An unterminated literal runs to the end: content, which SQLite reports as an error.
+        if (!inStatement) heads.push("");
+        return result();
+      }
       i = close;
       token = OTHER;
     } else if (isIdChar(c)) {
       let j = i + 1;
       while (j < n && isIdChar(sql[j] as string)) j++;
-      token = KEYWORDS[sql.slice(i, j).toLowerCase()] ?? OTHER;
+      word = sql.slice(i, j).toLowerCase();
+      token = KEYWORDS[word] ?? OTHER;
       i = j - 1;
     } else {
       token = OTHER;
     }
-    if (token !== SEMI && token !== WS) {
-      if (firstEnded) return { count: "many", firstEnd };
-      content = true;
+    if (token !== SEMI && token !== WS && !inStatement) {
+      inStatement = true;
+      heads.push(word);
     }
     state = TRANS[state]?.[token] ?? 2;
-    if (token === SEMI && state === 1 && content && !firstEnded) {
-      firstEnded = true;
-      firstEnd = i;
+    if (token === SEMI && state === 1 && inStatement) {
+      inStatement = false;
+      if (firstEnd < 0) firstEnd = i;
     }
     i++;
   }
-  return { count: content ? "one" : "empty", firstEnd };
+  return result();
 }

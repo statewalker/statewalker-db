@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countSqlStatements, firstSqlStatement } from "./sql-statements.js";
+import { countSqlStatements, firstSqlStatement, sqlStatementHeads } from "./sql-statements.js";
 
 describe("countSqlStatements", () => {
   it.each(["", "   \n\t", ";", " ; ;\n", "-- a comment", "/* a comment */", "/* unterminated"])(
@@ -51,5 +51,23 @@ describe("firstSqlStatement", () => {
     const trigger =
       "CREATE TRIGGER t AFTER INSERT ON a BEGIN INSERT INTO b VALUES (1); INSERT INTO b VALUES (2); END";
     expect(firstSqlStatement(`${trigger};`)).toBe(trigger);
+  });
+});
+
+describe("sqlStatementHeads", () => {
+  it.each([
+    ["", []],
+    ["SELECT 1", ["select"]],
+    ["  -- c\n/* d */ commit ; insert into t values (1);", ["commit", "insert"]],
+    ["SELECT 'COMMIT; ROLLBACK'; End", ["select", "end"]],
+    ["select case when 1 then 2 end; Release s", ["select", "release"]],
+    [
+      "CREATE TRIGGER tr AFTER INSERT ON t BEGIN INSERT INTO u VALUES (1); END; PRAGMA x",
+      ["create", "pragma"],
+    ],
+    ["(SELECT 1); 'x'", ["", ""]],
+    ["EXPLAIN COMMIT", ["explain"]],
+  ])("names the first word of each statement of %j", (sql, heads) => {
+    expect(sqlStatementHeads(sql)).toEqual(heads);
   });
 });

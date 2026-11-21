@@ -67,6 +67,7 @@ describe("sqlStatementHeads", () => {
     ],
     ["(SELECT 1); 'x'", ["", ""]],
     ["EXPLAIN COMMIT", ["explain"]],
+    ["SELECT 1;\vCOMMIT; \x0b\fEND", ["select", "commit", "end"]],
   ])("names the first word of each statement of %j", (sql, heads) => {
     expect(sqlStatementHeads(sql)).toEqual(heads);
   });

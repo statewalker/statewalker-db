@@ -105,6 +105,13 @@ const READ_ONLY_REFUSED = new Set([
 function checkReadOnly(sql: string): void {
   if (typeof sql !== "string") return; // checkSql reports it
   for (const head of sqlStatementHeads(sql)) {
+    // A statement that does not start with a word is refused too: where this scanner and SQLite
+    // could disagree on where a statement starts, the word SQLite sees is never checked.
+    if (head === "") {
+      throw new Error(
+        "db-sqlite: a read-only transaction refuses a statement that does not start with a keyword",
+      );
+    }
     if (READ_ONLY_REFUSED.has(head)) {
       throw new Error(
         `db-sqlite: a read-only transaction refuses ${head.toUpperCase()} ` +

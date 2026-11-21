@@ -93,7 +93,14 @@ function scanSqlStatements(sql: string): {
     let word = "";
     if (c === ";") {
       token = SEMI;
-    } else if (c === " " || c === "\t" || c === "\n" || c === "\r" || c === "\f") {
+    } else if (
+      c === " " ||
+      c === "\t" ||
+      c === "\n" ||
+      c === "\r" ||
+      c === "\f" ||
+      c === "\v" // SQLite skips it between statements (sqlite3Isspace), as it skips the others
+    ) {
       token = WS;
     } else if (c === "/" && sql[i + 1] === "*") {
       const close = sql.indexOf("*/", i + 2);

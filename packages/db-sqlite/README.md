@@ -50,7 +50,9 @@ slipping out of the transaction:
   ATTACH, DETACH, PRAGMA or VACUUM rejects with
   `db-sqlite: a read-only transaction refuses COMMIT (it would end the transaction or reach outside it)`.
   Statements are split as SQLite splits them, so the words inside literals, comments and trigger
-  bodies do not count.
+  bodies do not count. A statement that does not start with a word (such as `(SELECT 1)`) is
+  refused too, so that a separator SQLite skips and the splitter might not can never hide the
+  word that starts it.
 - Once a statement fails, `tx` refuses every later call, with
   `db-sqlite: a statement of this read-only transaction failed, so it refuses later calls (SQLite may have ended the transaction)`:
   SQLite ends a transaction itself on some errors (`INSERT OR ROLLBACK`, `RAISE(ROLLBACK)`), and

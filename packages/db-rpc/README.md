@@ -148,7 +148,7 @@ through one stub).
 - **Read-only:** each `query` and `exec` is its own `inReadOnlyTransaction`, so the result is
   read inside the transaction and served after the rollback. `db-sqlite` refuses statements that
   would end the transaction or reach outside it (BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT,
-  RELEASE, ATTACH, DETACH, PRAGMA, VACUUM) with
+  RELEASE, ATTACH, DETACH, PRAGMA, VACUUM, or no keyword at all) with
   `db-sqlite: a read-only transaction refuses COMMIT (it would end the transaction or reach outside it)`.
   A Durable Object refuses most of them anyway; on Node.js and in the browser, a `COMMIT` in the
   SQL would otherwise end the transaction and let what follows persist. `flush` runs as usual.

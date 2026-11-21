@@ -70,6 +70,9 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
       await setup(db);
       const attempts = [
         "COMMIT; INSERT INTO t (k) VALUES ('escaped')",
+        // SQLite skips a vertical tab between statements, as it skips any whitespace.
+        "SELECT 1;\vCOMMIT; INSERT INTO t (k) VALUES ('escaped')",
+        "SELECT 1;\v\fCOMMIT; INSERT INTO t (k) VALUES ('escaped')",
         "end",
         "ROLLBACK; INSERT INTO t (k) VALUES ('escaped')",
         "SELECT 1; /* c */ release sp",
@@ -79,6 +82,8 @@ export const sqliteTransactionScenarios: SqliteTransactionScenario[] = [
         "DETACH other",
         "PRAGMA foreign_keys = ON",
         "VACUUM",
+        // Not starting with a keyword: where a scanner and SQLite could disagree, refused.
+        "(SELECT 1)",
       ];
       for (const sql of attempts) {
         for (const how of ["exec", "query"] as const) {

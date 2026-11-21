@@ -1,5 +1,13 @@
 # @statewalker/db-duckdb-node
 
+## 0.2.1
+
+### Patch Changes
+
+- Release of the changes since the last published version:
+  
+  - @statewalker/db-sqlite ^0.1.3 -> ^0.1.4
+
 ## 0.2.0
 
 ### Minor Changes

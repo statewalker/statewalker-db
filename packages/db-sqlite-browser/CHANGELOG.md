@@ -1,5 +1,13 @@
 # @statewalker/db-sqlite-browser
 
+## 0.2.5
+
+### Patch Changes
+
+- Release of the changes since the last published version:
+  
+  - @statewalker/db-sqlite ^0.1.3 -> ^0.1.4
+
 ## 0.2.4
 
 ### Patch Changes
